@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ระบบมอบหมายงานและตรวจสอบงานแม่บ้าน — จัดตาราง มอบหมายงาน ติ๊กงาน สแกนใบเช็ค และพิมพ์ CHECK SHEET">
+<meta name="color-scheme" content="light dark">
+<title>ระบบมอบหมายงานแม่บ้าน</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style id="pageStyle">@page{size:A4 landscape;margin:6mm}</style>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<div id="root"></div>
+<div id="printHost"></div>
+<div id="modalHost"></div>
+<div id="toasts"></div>
+
+<!-- ไลบรารีภายนอก (ไม่บังคับ — ถ้าโหลดไม่ได้ ระบบจะทำงานต่อโดยลดความสามารถลง) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- โมดูลของระบบ — ลำดับการโหลดสำคัญ -->
+<script src="assets/core.js"></script>
+<script src="assets/seed.js"></script>
+<script src="assets/domain.js"></script>
+<script src="assets/ui.js"></script>
+<script src="assets/auth.js"></script>
+<script src="assets/screens-master.js"></script>
+<script src="assets/screens-ops.js"></script>
+<script src="assets/screens-verify.js"></script>
+<script src="assets/screens-keyin.js"></script>
+<script src="assets/print.js"></script>
+<script src="assets/sheet-daily.js"></script>
+<script src="assets/scan.js"></script>
+<script src="assets/boot.js"></script>
+
+</body>
+</html>
