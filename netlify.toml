@@ -1,0 +1,44 @@
+# =====================================================================
+# Netlify — การตั้งค่า deploy
+# =====================================================================
+# เว็บนี้เป็นไฟล์สแตติกล้วน ไม่ต้อง build อะไรจริงจัง
+# สคริปต์ netlify-build.sh ทำแค่ 2 อย่าง
+#   1. เขียน assets/config.js จาก Environment variables (ถ้าตั้งไว้)
+#   2. รวมไฟล์เป็นเวอร์ชันเดียวจบไว้ใน dist/ ให้ดาวน์โหลดได้
+# =====================================================================
+
+[build]
+  command = "bash netlify-build.sh"
+  publish = "."
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# ไม่ให้เบราว์เซอร์แคช config.js และ index.html
+# เวลาเปลี่ยนค่า Supabase แล้ว deploy ใหม่ ทุกเครื่องจะได้ค่าใหม่ทันที
+[[headers]]
+  for = "/assets/config.js"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# ไม่ต้องเผยแพร่ไฟล์เอกสารและสคริปต์ build
+[[redirects]]
+  from = "/netlify-build.sh"
+  to = "/index.html"
+  status = 404
+
+[[redirects]]
+  from = "/build.sh"
+  to = "/index.html"
+  status = 404

@@ -52,6 +52,24 @@ create policy "hkcs update" on public.hkcs_kv for update using (true) with check
 
 ### 4. ตั้งค่าในแอป
 
+มี 2 แบบ เลือกอย่างใดอย่างหนึ่ง
+
+#### แบบ ก — ตั้งครั้งเดียวให้ทุกเครื่อง (แนะนำถ้า deploy ขึ้น Netlify/Pages)
+
+กรอกใน `assets/config.js` หรือ Environment variables บน Netlify (ดู README หัวข้อ "นำขึ้น Netlify")
+ทุกเครื่องที่เปิดเว็บจะใช้ค่านี้ทันที ผู้ใช้ไม่ต้องกรอกอะไร
+และถ้าตั้ง `lockStorage: true` ผู้ใช้จะเปลี่ยนโหมดเก็บข้อมูลเองไม่ได้ด้วย
+
+```js
+window.HKCS_CONFIG = {
+  storage: { mode:'supabase', url:'https://xxxx.supabase.co',
+             anonKey:'eyJhbGciOi...', table:'hkcs_kv' },
+  lockStorage: true
+};
+```
+
+#### แบบ ข — กรอกในหน้าตั้งค่าของแต่ละเครื่อง
+
 1. เข้าสู่ระบบด้วยบัญชีผู้ดูแลระบบ → **ตั้งค่าระบบ**
 2. หัวข้อ **การเก็บข้อมูลและการใช้ข้ามเครื่อง** → เลือก **Supabase**
 3. กรอก URL, anon key, ชื่อตาราง

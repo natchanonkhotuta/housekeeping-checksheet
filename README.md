@@ -12,6 +12,7 @@
 
 - [ความสามารถ](#ความสามารถ)
 - [เริ่มใช้งานอย่างเร็ว](#เริ่มใช้งานอย่างเร็ว)
+- [นำขึ้น Netlify](#นำขึ้น-netlify)
 - [นำขึ้น GitHub Pages](#นำขึ้น-github-pages)
 - [ใช้ข้ามเครื่อง (คลาวด์)](#ใช้ข้ามเครื่อง-คลาวด์)
 - [บทบาทและสิทธิ์](#บทบาทและสิทธิ์)
@@ -70,6 +71,69 @@ bash build.sh
 
 ---
 
+## นำขึ้น Netlify
+
+ตั้งค่า Supabase **ครั้งเดียวตอน deploy** แล้วทุกเครื่องที่เปิดเว็บใช้ค่านั้นเลย
+ผู้ใช้ไม่ต้องกรอก URL หรือ key เองแม้แต่คนเดียว
+
+### 1. เตรียม Supabase ก่อน
+
+ทำตาม [docs/SETUP-CLOUD.md](docs/SETUP-CLOUD.md) หัวข้อ "สร้างตาราง"
+เก็บ **Project URL** กับ **anon public key** ไว้
+
+### 2. เชื่อม repo เข้ากับ Netlify
+
+1. push โค้ดขึ้น GitHub ก่อน (ดูหัวข้อถัดไป)
+2. ที่ [app.netlify.com](https://app.netlify.com) → **Add new site → Import an existing project**
+3. เลือก repo นี้ — Netlify จะอ่านค่าจาก `netlify.toml` ให้เอง
+   (build command `bash netlify-build.sh`, publish directory `.`)
+
+### 3. ใส่ค่า Supabase ครั้งเดียว
+
+**Site configuration → Environment variables → Add a variable**
+
+| Key | Value |
+|---|---|
+| `SUPABASE_URL` | `https://xxxx.supabase.co` |
+| `SUPABASE_ANON_KEY` | `eyJhbGciOi...` |
+| `SUPABASE_TABLE` | `hkcs_kv` *(ไม่ใส่ก็ได้)* |
+| `HKCS_ORG_NAME` | ชื่อบริษัท *(ไม่ใส่ก็ได้)* |
+| `HKCS_ORG_DEPT` | ชื่อฝ่าย *(ไม่ใส่ก็ได้)* |
+
+กด **Deploy** — เสร็จแล้วเปิดเว็บจากคอมเครื่องไหนก็เห็นข้อมูลชุดเดียวกันทันที
+หน้าตั้งค่าระบบจะขึ้นป้าย 🔒 *ตั้งค่ามาจากผู้ติดตั้งระบบแล้ว* และล็อกไม่ให้ผู้ใช้เปลี่ยนเอง
+
+> **เปลี่ยนค่าทีหลัง** — แก้ Environment variable แล้วกด **Trigger deploy → Deploy site**
+> ระบบตั้ง `Cache-Control: no-store` ให้ `config.js` และ `index.html` ไว้แล้ว ทุกเครื่องจะได้ค่าใหม่ทันทีที่รีเฟรช
+
+### ทางเลือก — ไม่อยากใช้ Environment variable
+
+แก้ `assets/config.js` ตรง ๆ แล้ว commit ก็ได้เหมือนกัน
+
+```js
+window.HKCS_CONFIG = {
+  storage: {
+    mode: 'supabase',
+    url: 'https://xxxx.supabase.co',
+    anonKey: 'eyJhbGciOi...',
+    table: 'hkcs_kv'
+  },
+  lockStorage: true
+};
+```
+
+ต่างกันแค่ anon key จะอยู่ในประวัติ Git ด้วย — ส่วนตัว key เองยังไงก็ต้องอยู่ในหน้าเว็บ
+ให้ผู้ใช้โหลดอยู่แล้ว ความปลอดภัยจริงอยู่ที่ Row Level Security ฝั่ง Supabase
+
+> `lockStorage: false` ถ้าอยากให้ค่านี้เป็นแค่ค่าเริ่มต้น แล้วผู้ใช้ยังเปลี่ยนเป็นโหมดอื่นเองได้
+
+### ลากไฟล์ขึ้น Netlify โดยไม่ใช้ Git
+
+รัน `bash build.sh` แล้วลากทั้งโฟลเดอร์ขึ้น Netlify Drop ได้เลย
+แต่วิธีนี้ต้องกรอกค่าใน `assets/config.js` เองก่อน build เพราะไม่มีขั้นตอน build บนเซิร์ฟเวอร์
+
+---
+
 ## นำขึ้น GitHub Pages
 
 1. สร้าง repository ใหม่บน GitHub แล้ว push โค้ดชุดนี้ขึ้นไป
@@ -96,6 +160,7 @@ bash build.sh
 
 | โหมด | เหมาะกับ | ต้องเตรียมอะไร |
 |---|---|---|
+| **ตั้งมาจากผู้ติดตั้ง** | ทั้งองค์กรใช้แหล่งเดียวกัน | กรอกใน `assets/config.js` หรือ Environment variables ครั้งเดียว — ผู้ใช้ไม่ต้องทำอะไร |
 | **อัตโนมัติ** (ค่าเริ่มต้น) | ทั่วไป | ไม่ต้อง — ตรวจหาฐานข้อมูลของ Claude Artifact ให้ ถ้าไม่มีจะใช้เครื่องนี้ |
 | **เก็บในเครื่องนี้** | ใช้คนเดียว / ออฟไลน์ | ไม่ต้อง |
 | **Supabase** | หลายคนหลายเครื่อง ใช้ฟรีได้ | สมัคร Supabase + สร้างตาราง 1 ตาราง |

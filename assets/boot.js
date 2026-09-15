@@ -20,6 +20,9 @@
   let data = await Store.get(DATA_KEY);
   if(!data || !data.areas || !data.users || !data.users.length){
     data = await buildSeed();
+    // ข้อมูลหน่วยงานที่ผู้ติดตั้งกำหนดไว้ใน assets/config.js (ใช้เฉพาะตอนสร้างครั้งแรก)
+    const orgCfg = (window.HKCS_CONFIG && window.HKCS_CONFIG.org) || null;
+    if(orgCfg) Object.keys(orgCfg).forEach(k=>{ if(orgCfg[k]) data.org[k] = orgCfg[k]; });
     await Store.set(DATA_KEY, data);
   }
   state.data = normalizeData(data);

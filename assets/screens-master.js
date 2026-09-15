@@ -710,7 +710,22 @@ function userDialog(user){
    ===================================================================== */
 SCREENS.settings = async function(v){
   const o = state.data.org, s = state.data.settings;
-  const cfg = Store.loadCfg() || { mode:'auto', url:'', key:'', table:'hkcs_kv', authHeader:'', authValue:'' };
+  const cfg = Store.loadCfg() || Store.cfg
+            || { mode:'auto', url:'', key:'', table:'hkcs_kv', authHeader:'', authValue:'' };
+
+  // ป้ายบอกที่มาของการตั้งค่า — ตั้งจากไฟล์ config.js ตอน deploy หรือผู้ใช้ตั้งเอง
+  const srcNote =
+    Store.locked
+      ? '<div class="card" style="border-color:var(--brand);background:var(--brand-soft);margin:.2rem 0 .8rem">'
+        + '🔒 <b>ตั้งค่ามาจากผู้ติดตั้งระบบแล้ว</b> — ทุกเครื่องที่เปิดเว็บนี้ใช้แหล่งข้อมูลเดียวกันโดยอัตโนมัติ '
+        + 'ไม่ต้องกรอก URL หรือ key เอง<div class="hint" style="margin-top:.3rem">'
+        + 'ถ้าต้องการเปลี่ยน ให้แก้ที่ <code>assets/config.js</code> '
+        + 'หรือ Environment variables ของโฮสต์ แล้ว deploy ใหม่</div></div>'
+      : (Store.source === 'config'
+        ? '<div class="card" style="border-color:var(--info);background:var(--info-soft);margin:.2rem 0 .8rem">'
+          + 'ℹ️ ค่าเริ่มต้นนี้มาจาก <code>assets/config.js</code> ที่ผู้ติดตั้งกำหนดไว้ '
+          + '— เปลี่ยนเฉพาะเครื่องนี้ได้ที่ด้านล่าง</div>'
+        : '');
 
   v.innerHTML =
     '<div class="page-head"><h1>⚙️ ตั้งค่าระบบ</h1></div>'
@@ -735,6 +750,7 @@ SCREENS.settings = async function(v){
     +   '<p class="hint" style="margin-top:.7rem">การเปลี่ยนกฎมีผลกับการ “สร้าง/อัปเดตตาราง” ครั้งถัดไป</p></div>'
 
     + '<div class="card" style="grid-column:1/-1"><h2>☁️ การเก็บข้อมูลและการใช้ข้ามเครื่อง</h2>'
+    +   srcNote
     +   '<p class="hint">โหมดปัจจุบัน: <b>'+esc(Store.modeLabel())+'</b>'
     +     (Store.isShared() ? (Store.online ? ' · เชื่อมต่อปกติ'
         : ' · <span style="color:var(--danger)">เชื่อมต่อไม่ได้: '+esc(Store.lastError||'')+'</span>') : '')
@@ -800,6 +816,14 @@ SCREENS.settings = async function(v){
   };
   $('#cMode').onchange = syncCloudBoxes;
   syncCloudBoxes();
+
+  // ถูกล็อกจาก config.js — ให้ดูได้อย่างเดียว แต่ยังกดซิงก์/ส่งข้อมูลขึ้นได้
+  if(Store.locked){
+    ['cMode','cUrl','cKey','cTable','cUrl2','cAH','cAV','cSave','cTest'].forEach(id=>{
+      const el = $('#'+id);
+      if(el) el.disabled = true;
+    });
+  }
 
   const readCfg = ()=>{
     const m = $('#cMode').value;

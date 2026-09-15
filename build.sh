@@ -13,7 +13,7 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p dist
 
-JS_FILES="assets/core.js assets/seed.js assets/domain.js assets/ui.js assets/auth.js \
+JS_FILES="assets/config.js assets/core.js assets/seed.js assets/domain.js assets/ui.js assets/auth.js \
 assets/screens-master.js assets/screens-ops.js assets/screens-verify.js \
 assets/screens-keyin.js assets/print.js assets/sheet-daily.js assets/scan.js assets/boot.js"
 

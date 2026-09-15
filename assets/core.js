@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -223,6 +223,26 @@ const Store = {
   cfg: null,
   online: true,
   lastError: '',
+  /** ที่มาของการตั้งค่า: 'config' = ตั้งมาจากผู้ติดตั้ง · 'user' = ผู้ใช้ตั้งเอง · 'auto' = ตรวจพบเอง */
+  source: 'auto',
+  /** true = ผู้ติดตั้งล็อกไว้ ผู้ใช้เปลี่ยนเองไม่ได้ */
+  locked: false,
+
+  /** การตั้งค่าที่ผู้ติดตั้งกำหนดไว้ใน assets/config.js (ถ้ามี) */
+  appCfg(){
+    const c = (typeof window !== 'undefined' && window.HKCS_CONFIG) ? window.HKCS_CONFIG.storage : null;
+    if(!c) return null;
+    if(c.mode === 'supabase' && c.url && c.anonKey)
+      return { mode:'supabase', url:c.url, key:c.anonKey, table:(c.table || 'hkcs_kv') };
+    if(c.mode === 'rest' && c.url)
+      return { mode:'rest', url:c.url, authHeader:c.authHeader || '', authValue:c.authValue || '' };
+    if(c.mode === 'local') return { mode:'local' };
+    return null;
+  },
+  isLockedByInstaller(){
+    return !!(typeof window !== 'undefined' && window.HKCS_CONFIG
+              && window.HKCS_CONFIG.lockStorage && this.appCfg());
+  },
 
   loadCfg(){
     try{ const raw = localStorage.getItem(SYNC_CFG_KEY); return raw? JSON.parse(raw) : null; }
@@ -242,8 +262,29 @@ const Store = {
   },
   isShared(){ return this.mode !== 'local'; },
 
+  /**
+   * ลำดับความสำคัญของการตั้งค่า
+   *   1. assets/config.js ที่ผู้ติดตั้งล็อกไว้  (lockStorage: true)
+   *   2. ค่าที่ผู้ใช้ตั้งเองในเครื่องนี้
+   *   3. assets/config.js แบบไม่ล็อก (ใช้เป็นค่าเริ่มต้น)
+   *   4. ฐานข้อมูลของ Claude Artifact ถ้าตรวจพบ
+   *   5. เก็บในเครื่องนี้
+   */
   async init(){
+    const installed = this.appCfg();
+    this.locked = this.isLockedByInstaller();
+
+    if(this.locked){
+      this.cfg = installed;
+      this.source = 'config';
+      this.mode = installed.mode;
+      return this.mode;
+    }
+
     this.cfg = this.loadCfg();
+    if(!this.cfg && installed){ this.cfg = installed; this.source = 'config'; }
+    else if(this.cfg) this.source = 'user';
+
     if(this.cfg && this.cfg.mode === 'supabase' && this.cfg.url && this.cfg.key){
       this.mode = 'supabase'; return this.mode;
     }
@@ -251,6 +292,8 @@ const Store = {
       this.mode = 'rest'; return this.mode;
     }
     if(this.cfg && this.cfg.mode === 'local'){ this.mode = 'local'; return this.mode; }
+
+    this.source = 'auto';
     // ตรวจหาฐานข้อมูลของ Claude Artifact โดยอัตโนมัติ
     try{
       if(typeof window!=='undefined' && window.claude && typeof window.claude.use==='function'){
