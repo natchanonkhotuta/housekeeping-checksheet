@@ -245,3 +245,133 @@ function setCellStatus(plan, k, status, extra){
   }
   if(extra) Object.assign(c, extra);
 }
+
+/* =====================================================================
+   7. สถิติรายวันรายบุคคล
+   ---------------------------------------------------------------------
+   ปัญหาเดิม: รายงานอ่านทีละพื้นที่ พอแม่บ้านไปช่วยพื้นที่อื่น ข้อมูลตกหล่น
+   วิธีแก้: กวาด "ทุกพื้นที่" ในเดือนนั้นแล้วจัดกลุ่มตามคน+วัน
+           จากนั้นซ้อนทับด้วยส่วนต่างที่บันทึกไว้ใน daily:YYYY-MM
+   ===================================================================== */
+
+/** ดัชนีงานที่ทำจริงของทั้งเดือน — { 'staffId|day': { taskId: {...} } } */
+function monthWorkIndex(y, m){
+  const idx = {};
+  D.areas(false).forEach(a=>{
+    const p = state.plans[planKey(y, m, a.id)];
+    if(!p) return;
+    for(const k in p.cells){
+      const c = p.cells[k];
+      if(!c.s) continue;
+      const worked = ST_DONE.includes(c.st) || ST_PROBLEM.includes(c.st);
+      if(!worked) continue;
+      const key = c.s + '|' + c.day;
+      const list = idx[key] || (idx[key] = {});
+      const e = list[c.t] || (list[c.t] = {
+        taskId: c.t, areaId: a.id, periods: [], st: 'done', auto: true
+      });
+      if(!e.periods.includes(c.p)) e.periods.push(c.p);
+      if(ST_PROBLEM.includes(c.st)) e.st = 'failed';
+    }
+  });
+  return idx;
+}
+
+/** ส่วนต่างที่บันทึกไว้ของคนนั้นวันนั้น (สร้างให้ถ้ายังไม่มี) */
+function dailyRec(y, m, staffId, day, create){
+  const d = state.dailies[ymKey(y, m)];
+  if(!d) return {};
+  const k = staffId + '|' + day;
+  if(!d.rec[k] && create) d.rec[k] = { s: staffId, d: day };
+  return d.rec[k] || {};
+}
+
+/**
+ * งานที่แม่บ้านคนนี้ทำจริงในวันนั้น (รวมทุกพื้นที่ + ส่วนต่างที่บันทึกด้วยมือ)
+ * @param {object} idx ดัชนีจาก monthWorkIndex() — ส่งมาด้วยเพื่อไม่ต้องกวาดซ้ำ
+ */
+function dailyWork(y, m, day, staffId, idx){
+  idx = idx || monthWorkIndex(y, m);
+  const rec  = dailyRec(y, m, staffId, day);
+  const base = idx[staffId + '|' + day] || {};
+  const map  = {};
+
+  Object.keys(base).forEach(t=>{ map[t] = base[t]; });
+  (rec.rm || []).forEach(t=> delete map[t]);
+  (rec.add || []).forEach(t=>{
+    if(map[t]) return;
+    const td = D.taskDef(t);
+    if(!td) return;
+    map[t] = { taskId: t, areaId: td.areaId, periods: [], st: 'done', auto: false };
+  });
+
+  const items = Object.keys(map).map(t=> map[t]).filter(it=> D.taskDef(it.taskId));
+  items.sort((a,b)=> areaOrderOf(a.areaId) - areaOrderOf(b.areaId)
+    || ((D.taskDef(a.taskId).order || 0) - (D.taskDef(b.taskId).order || 0)));
+  return { items, rec };
+}
+
+function areaOrderOf(areaId){
+  const a = D.area(areaId);
+  return a ? (a.order || 0) : 999;
+}
+
+/** พื้นที่ที่แม่บ้านคนนี้รับผิดชอบ (ใช้จำกัดตัวเลือกตอนเพิ่มงานด้วยมือ) */
+function areasOfStaff(staffId){
+  const s = D.staff(staffId);
+  if(!s) return [];
+  const ids = [];
+  if(s.mainAreaId) ids.push(s.mainAreaId);
+  (s.subAreaIds || []).forEach(id=>{ if(!ids.includes(id)) ids.push(id); });
+  return ids.map(D.area).filter(Boolean).sort((a,b)=> (a.order||0) - (b.order||0));
+}
+
+/** สถานะการทำงานของคนนั้นในวันนั้น — 'work' | 'off' พร้อมเหตุผล */
+function dailyStatus(y, m, day, staffId){
+  const rec = dailyRec(y, m, staffId, day);
+  if(rec.st === 'work') return { st:'work', label:'ปฏิบัติงาน', forced:true };
+  const off = staffOffOn(staffId, ymd(y, m, day));
+  if(rec.st === 'off' || rec.st === 'leave')
+    return { st:'off', label: rec.stLabel || (off ? off.label : 'หยุด'), forced:true };
+  if(off) return { st:'off', label: off.label, kind: off.kind };
+  return { st:'work', label:'ปฏิบัติงาน' };
+}
+
+/**
+ * ตารางสรุปรายเดือนของแม่บ้าน 1 คน
+ * rows  = จุดที่คนนั้นทำจริงทั้งเดือน (รวมทุกพื้นที่)
+ * byDay = { วันที่: { marks:{taskId:'done'|'failed'}, cm, status } }
+ */
+function staffMonthMatrix(y, m, staffId, idx){
+  idx = idx || monthWorkIndex(y, m);
+  const dim = daysInMonth(y, m);
+  const rowsMap = {};
+  const byDay = {};
+  let workDays = 0, marks = 0, comments = 0;
+
+  for(let d = 1; d <= dim; d++){
+    const w = dailyWork(y, m, d, staffId, idx);
+    const cell = { marks:{}, cm: w.rec.cm || '', status: dailyStatus(y, m, d, staffId) };
+    w.items.forEach(it=>{
+      if(!rowsMap[it.taskId])
+        rowsMap[it.taskId] = { taskId: it.taskId, td: D.taskDef(it.taskId), areaId: it.areaId };
+      cell.marks[it.taskId] = it.st;
+      marks++;
+    });
+    if(w.items.length) workDays++;
+    if(cell.cm) comments++;
+    byDay[d] = cell;
+  }
+
+  const rows = Object.keys(rowsMap).map(k=> rowsMap[k])
+    .sort((a,b)=> areaOrderOf(a.areaId) - areaOrderOf(b.areaId)
+      || ((a.td.order || 0) - (b.td.order || 0)));
+
+  return { rows, byDay, dim, workDays, marks, comments };
+}
+
+/** โหลดข้อมูลที่จำเป็นทั้งหมดของเดือน (ตารางงานทุกพื้นที่ + บันทึกประจำวัน) */
+async function loadMonthAll(y, m){
+  await loadMonthPlans(y, m);
+  await loadDaily(y, m);
+}

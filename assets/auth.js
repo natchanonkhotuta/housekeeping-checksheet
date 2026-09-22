@@ -135,12 +135,27 @@ async function collectAllPlans(onProgress){
   return out;
 }
 
+/** บันทึกประจำวันรายบุคคลทุกเดือนที่เคยบันทึกไว้ */
+async function collectAllDailies(){
+  const keys = new Set(state.data.dailyIndex || []);
+  Object.keys(state.dailies).forEach(k=> keys.add(k));
+  (await Store.keys('daily:')).forEach(k=> keys.add(k.slice(6)));
+
+  const out = {};
+  for(const k of keys){
+    const d = state.dailies[k] || await Store.get('daily:'+k);
+    if(d) out[k] = d;
+  }
+  return out;
+}
+
 async function backupAll(){
   toast('กำลังรวบรวมข้อมูล…');
-  const plans = await collectAllPlans();
+  const plans   = await collectAllPlans();
+  const dailies = await collectAllDailies();
   const dump = {
     app:'hkcs', version: APP_VERSION, exportedAt: nowIso(),
-    master: state.data, plans
+    master: state.data, plans, dailies
   };
   const t = new Date();
   const name = 'backup_ระบบแม่บ้าน_' + (t.getFullYear()+543) + pad2(t.getMonth()+1) + pad2(t.getDate()) + '.json';
@@ -163,8 +178,11 @@ function restoreDialog(){
             if(!j.master) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
             state.data = normalizeData(j.master);
             state.plans = {};
+            state.dailies = {};
             const keys = Object.keys(j.plans || {});
-            state.data.planIndex = keys.slice().sort();
+            const dkeys = Object.keys(j.dailies || {});
+            state.data.planIndex  = keys.slice().sort();
+            state.data.dailyIndex = dkeys.slice().sort();
             await Store.set(DATA_KEY, state.data);
             let n = 0;
             for(const k of keys){
@@ -173,8 +191,15 @@ function restoreDialog(){
               state.plans[k] = j.plans[k];
               await Store.set('plan:'+k, j.plans[k]);
             }
+            n = 0;
+            for(const k of dkeys){
+              n++;
+              const el = $('#rsProg'); if(el) el.textContent = 'กำลังกู้คืนบันทึกประจำวัน '+n+'/'+dkeys.length;
+              state.dailies[k] = j.dailies[k];
+              await Store.set('daily:'+k, j.dailies[k]);
+            }
             closeModal();
-            toast('กู้คืนข้อมูลเรียบร้อย ('+keys.length+' ตาราง)','ok');
+            toast('กู้คืนข้อมูลเรียบร้อย ('+keys.length+' ตาราง · '+dkeys.length+' บันทึกประจำวัน)','ok');
             if(state.session){ renderShell(); renderRoute(); } else renderLogin();
           }catch(e){ toast('กู้คืนไม่สำเร็จ: '+e.message,'err'); }
         }},

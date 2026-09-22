@@ -865,11 +865,14 @@ SCREENS.settings = async function(v){
   $('#cUpload').onclick = ()=> confirmDialog(
     'ส่งข้อมูลทั้งหมดในเครื่องนี้ขึ้นส่วนกลาง? <b>ข้อมูลบนส่วนกลางจะถูกเขียนทับ</b>', async ()=>{
       if(!Store.isShared()){ toast('ต้องตั้งค่าโหมดคลาวด์ก่อน','err'); return; }
-      const plans = await collectAllPlans();
+      const plans   = await collectAllPlans();
+      const dailies = await collectAllDailies();
       await Store.set(DATA_KEY, state.data);
       let n = 0;
       for(const k in plans){ await Store.set('plan:'+k, plans[k]); n++; }
-      toast('ส่งข้อมูลขึ้นส่วนกลางแล้ว ('+n+' ตาราง)','ok');
+      let nd = 0;
+      for(const k in dailies){ await Store.set('daily:'+k, dailies[k]); nd++; }
+      toast('ส่งข้อมูลขึ้นส่วนกลางแล้ว ('+n+' ตาราง · '+nd+' บันทึกประจำวัน)','ok');
     }, 'ส่งขึ้น', 'danger');
 
   $('#saveSet').onclick = async ()=>{

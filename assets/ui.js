@@ -13,9 +13,10 @@ const NAV = [
   ]},
   { grp:'ปฏิบัติงาน', items:[
     { id:'assign', ic:'🗓️', label:'มอบหมายงาน (ปฏิทิน)' },
-    { id:'keyin',  ic:'⌨️', label:'บันทึกผลจากกระดาษ' },
-    { id:'scan',   ic:'📷', label:'สแกนใบเช็คงาน' },
-    { id:'verify', ic:'🔍', label:'ตรวจสอบและอนุมัติ' },
+    { id:'keyin',    ic:'⌨️', label:'บันทึกผลจากกระดาษ' },
+    { id:'scan',     ic:'📷', label:'สแกนใบเช็คงาน' },
+    { id:'dailylog', ic:'📓', label:'บันทึกประจำวัน' },
+    { id:'verify',   ic:'🔍', label:'ตรวจสอบและอนุมัติ' },
     { id:'print',  ic:'🖨️', label:'พิมพ์ / ส่งออก CHECK SHEET' }
   ]},
   { grp:'ข้อมูลหลัก', items:[
@@ -25,7 +26,8 @@ const NAV = [
     { id:'holidays', ic:'📆', label:'ปฏิทินวันหยุด / วันลา' }
   ]},
   { grp:'ระบบ', items:[
-    { id:'report',   ic:'📈', label:'รายงานประวัติการทำงาน' },
+    { id:'staffmonth', ic:'📊', label:'สรุปรายเดือนรายบุคคล' },
+    { id:'report',     ic:'📈', label:'รายงานประวัติการทำงาน' },
     { id:'users',    ic:'🔐', label:'ผู้ใช้งานและสิทธิ์' },
     { id:'settings', ic:'⚙️', label:'ตั้งค่าระบบ' }
   ]}

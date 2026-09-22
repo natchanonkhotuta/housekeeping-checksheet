@@ -328,3 +328,23 @@ body.printing #printHost{display:block}
   .sheet table.cs tr{page-break-inside:avoid}
   .sheet table.cs thead{display:table-header-group}
 }
+
+/* ---------- สรุปรายเดือนรายบุคคล (matrix คน x วัน) ---------- */
+.smx-wrap{max-height:70vh;overflow:auto}
+table.smx{border-collapse:separate;border-spacing:0;width:auto;min-width:100%;font-size:.82rem}
+table.smx th,table.smx td{border:1px solid var(--border);padding:.18rem .25rem;text-align:center;background:var(--surface)}
+table.smx thead th{position:sticky;top:0;z-index:3;background:var(--surface-2);font-weight:600}
+table.smx th.tk,table.smx td.tk{position:sticky;left:0;z-index:4;text-align:left;
+  min-width:190px;max-width:230px;padding:.25rem .45rem;background:var(--surface)}
+table.smx thead th.tk{z-index:5;background:var(--surface-2)}
+table.smx td.tk .hint{font-size:.72rem}
+table.smx td.d,table.smx th.d{width:24px;min-width:24px;font-variant-numeric:tabular-nums}
+table.smx th.d .dw{display:block;font-size:.65rem;font-weight:400;color:var(--muted)}
+table.smx .sun{background:var(--sunday)}
+table.smx .hol{background:var(--holiday)}
+table.smx .off{background:var(--leave)}
+table.smx td.ok{color:var(--ok);font-weight:700}
+table.smx td.bad{color:var(--danger);font-weight:700}
+table.smx tr.cmrow td{background:var(--surface-2);font-size:.74rem;color:var(--info)}
+.smx-note{font-size:.82rem;color:var(--muted);line-height:1.6;margin-top:.5rem}
+.smx-note b{color:var(--info);font-weight:600}

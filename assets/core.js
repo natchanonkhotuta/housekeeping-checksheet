@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -62,11 +62,11 @@ const ROLES = {
    --------------------------------------------------------------- */
 const PERMS = {
   admin:      ['*'],
-  supervisor: ['dashboard','mywork','assign','verify','keyin','scan','print','report',
+  supervisor: ['dashboard','mywork','assign','verify','keyin','scan','dailylog','print','report',
                'holiday','check.any','staff.view','area.view','taskdef.view'],
   manager:    ['dashboard','verify.approve','print','report',
                'staff.view','area.view','taskdef.view','holiday.view'],
-  recorder:   ['dashboard','keyin','scan','print','report',
+  recorder:   ['dashboard','keyin','scan','dailylog','print','report',
                'staff.view','area.view','taskdef.view','holiday.view'],
   staff:      ['dashboard','mywork','check.self','print.self','holiday.view']
 };
@@ -78,6 +78,8 @@ const ROUTE_PERMS = {
   assign:    ['assign'],
   keyin:     ['keyin'],
   scan:      ['scan'],
+  dailylog:  ['dailylog'],
+  staffmonth:['report'],
   verify:    ['verify','verify.approve'],
   print:     ['print','print.self'],
   staff:     ['staff','staff.view'],
@@ -449,6 +451,7 @@ const state = {
   route: 'dashboard',
   data: null,     // { org, areas, staff, taskDefs, holidays, leaves, users, settings, planIndex, audit }
   plans: {},      // { 'YYYY-MM|areaId' : plan }
+  dailies: {},    // { 'YYYY-MM' : บันทึกประจำวันรายบุคคล }
   ui: {
     y: todayParts().y, m: todayParts().m,
     areaId:'', staffId:'', selDay:0,
@@ -487,13 +490,36 @@ async function loadPlan(y, m, areaId){
 }
 /** จำรายชื่อแผนที่เคยบันทึก เพื่อให้ "สำรองข้อมูล" ครบทุกเดือนแม้ยังไม่ได้เปิดดู */
 function registerPlanKey(key){
+  registerIndexKey('planIndex', key);
+}
+function registerIndexKey(field, key){
   if(!state.data) return;
-  if(!Array.isArray(state.data.planIndex)) state.data.planIndex = [];
-  if(!state.data.planIndex.includes(key)){
-    state.data.planIndex.push(key);
-    state.data.planIndex.sort();
+  if(!Array.isArray(state.data[field])) state.data[field] = [];
+  if(!state.data[field].includes(key)){
+    state.data[field].push(key);
+    state.data[field].sort();
     Store.set(DATA_KEY, state.data);   // เขียนแบบไม่รอ — ครั้งถัดไปที่ saveMaster จะยืนยันอีกที
   }
+}
+
+/* ---------- บันทึกประจำวันรายบุคคล ----------
+   เก็บเฉพาะ "ส่วนต่าง" จากที่ระบบรวมได้เองจากตารางงาน
+   เพื่อไม่ให้ข้อมูลซ้ำซ้อนและไม่ขัดกันเมื่อคีย์ผลหรือสแกนเพิ่มทีหลัง   */
+async function loadDaily(y, m){
+  const k = ymKey(y, m);
+  if(state.dailies[k]) return state.dailies[k];
+  const got = await Store.get('daily:'+k);
+  state.dailies[k] = got || { key:k, y, m, rec:{}, createdAt:nowIso() };
+  if(got) registerIndexKey('dailyIndex', k);
+  return state.dailies[k];
+}
+async function saveDaily(y, m){
+  const k = ymKey(y, m);
+  const d = state.dailies[k];
+  if(!d) return;
+  d.updatedAt = nowIso();
+  registerIndexKey('dailyIndex', k);
+  await Store.set('daily:'+k, d);
 }
 
 /* ---------- ประวัติการแก้ไข ---------- */
@@ -525,6 +551,7 @@ function normalizeData(data){
   data.users     = data.users     || [];
   data.audit     = data.audit     || [];
   data.planIndex = data.planIndex || [];
+  data.dailyIndex = data.dailyIndex || [];
   return data;
 }
 
@@ -533,10 +560,13 @@ async function syncNow(silent){
   if(!Store.isShared()){ if(!silent) toast('โหมดนี้เก็บข้อมูลในเครื่อง จึงไม่ต้องซิงก์'); return; }
   const d = await Store.get(DATA_KEY);
   if(d) state.data = normalizeData(d);
-  const keys = Object.keys(state.plans);
-  for(const k of keys){
+  for(const k of Object.keys(state.plans)){
     const p = await Store.get('plan:'+k);
     if(p) state.plans[k] = p;
+  }
+  for(const k of Object.keys(state.dailies)){
+    const dd = await Store.get('daily:'+k);
+    if(dd) state.dailies[k] = dd;
   }
   if(!silent){
     if(Store.online) toast('ซิงก์ข้อมูลล่าสุดแล้ว','ok');

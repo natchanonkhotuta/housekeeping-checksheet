@@ -15,7 +15,7 @@ mkdir -p dist
 
 JS_FILES="assets/config.js assets/core.js assets/seed.js assets/domain.js assets/ui.js assets/auth.js \
 assets/screens-master.js assets/screens-ops.js assets/screens-verify.js \
-assets/screens-keyin.js assets/print.js assets/sheet-daily.js assets/scan.js assets/boot.js"
+assets/screens-keyin.js assets/screens-daily.js assets/screens-staffmonth.js assets/print.js assets/sheet-daily.js assets/scan.js assets/boot.js"
 
 CDN_XLSX="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
 CDN_PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
