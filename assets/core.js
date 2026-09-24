@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';

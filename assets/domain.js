@@ -341,6 +341,12 @@ function compareAreaShort(a, b){
  * พื้นที่ที่กรอกเลขเองได้เลขนั้น · ที่เหลือได้เลขว่างตัวถัดไปโดยไม่ชนกัน
  * (ถ้าปล่อยให้ใช้ "ลำดับพื้นที่" ตรง ๆ จะชนกับเลขที่ผู้ใช้กรอกเอง)
  */
+/** ดึงเลขชั้นจากชื่อพื้นที่ เช่น "ชั้นที่ 4" → "4" · ชื่อที่ไม่ใช่ชั้นคืนค่าว่าง */
+function floorNumberOf(name){
+  const mm = String(name || '').match(/ชั้น\s*(?:ที่)?\s*(\d{1,2})(?!\d)/);
+  return mm ? String(parseInt(mm[1], 10)) : '';
+}
+
 let _areaShortCache = null;
 function areaShortMap(){
   const areas = D.areas(false);
@@ -348,10 +354,21 @@ function areaShortMap(){
   if(_areaShortCache && _areaShortCache.sig === sig) return _areaShortCache.map;
 
   const map = {}, used = {};
+
+  // 1) เลขที่ผู้ใช้กรอกเอง — ได้สิทธิ์ก่อนเสมอ
   areas.forEach(a=>{
     const sc = String(a.sc == null ? '' : a.sc).trim();
     if(sc){ map[a.id] = sc; used[sc] = true; }
   });
+
+  // 2) ชื่อที่เป็น "ชั้นที่ N" ใช้เลขชั้นนั้นเลย — ตรงกับที่คนเรียกกันหน้างาน
+  areas.forEach(a=>{
+    if(map[a.id]) return;
+    const n = floorNumberOf(a.name);
+    if(n && !used[n]){ map[a.id] = n; used[n] = true; }
+  });
+
+  // 3) ที่เหลือไล่เลขว่างตัวถัดไป
   let n = 1;
   areas.forEach(a=>{
     if(map[a.id]) return;
@@ -450,30 +467,50 @@ function taskRowKey(td){
  */
 function staffMonthGoal(y, m, staffId, idx){
   idx = idx || monthWorkIndex(y, m);
-  const planned = new Set();
+  const dim = daysInMonth(y, m);
+  const t = todayParts();
 
+  // นับถึงวันนี้เท่านั้น — ไม่เอาวันข้างหน้ามาถ่วง ไม่งั้นต้นเดือนจะได้ % ต่ำเสมอ
+  let lastDay = dim;
+  if(y === t.y && m === t.m) lastDay = t.d;
+  else if(y > t.y || (y === t.y && m > t.m)) lastDay = 0;
+
+  // วันที่คนนี้หยุด/ลา ไม่นับเป็นเป้าหมาย
+  const offDay = {};
+  for(let d = 1; d <= dim; d++) offDay[d] = (dailyStatus(y, m, d, staffId).st === 'off');
+
+  const planned = new Set();
   D.areas(false).forEach(a=>{
     const p = state.plans[planKey(y, m, a.id)];
     if(!p) return;
     for(const k in p.cells){
       const c = p.cells[k];
       if(c.s !== staffId) continue;
+      if(c.day > lastDay) continue;
+      if(offDay[c.day]) continue;
       if(c.st === 'skipped' || c.st === 'leave') continue;
       planned.add(c.t + '|' + c.day);
     }
   });
 
-  const dim = daysInMonth(y, m);
   const done = new Set();
-  for(let d = 1; d <= dim; d++){
-    dailyWork(y, m, d, staffId, idx).items.forEach(it=>{
-      if(it.st === 'done') done.add(it.taskId + '|' + d);
-    });
+  let daysWithData = 0, workDaysElapsed = 0;
+  for(let d = 1; d <= lastDay; d++){
+    if(offDay[d]) continue;
+    workDaysElapsed++;
+    const items = dailyWork(y, m, d, staffId, idx).items;
+    if(items.length) daysWithData++;
+    items.forEach(it=>{ if(it.st === 'done') done.add(it.taskId + '|' + d); });
   }
 
   const target = planned.size;
   const hit = done.size;
-  return { target, done: hit, pct: target ? Math.round(hit / target * 100) : 0 };
+  return {
+    target, done: hit,
+    pct: target ? Math.round(hit / target * 100) : 0,
+    lastDay, daysWithData, workDaysElapsed,
+    missingDays: Math.max(0, workDaysElapsed - daysWithData)
+  };
 }
 
 /** โหลดข้อมูลที่จำเป็นทั้งหมดของเดือน (ตารางงานทุกพื้นที่ + บันทึกประจำวัน) */

@@ -114,7 +114,10 @@ function staffMatrixHtml(s, mx, y, m){
   }
 
   const g = mx.goal;
-  const goalCls = g.pct >= 90 ? 'b-done' : g.pct >= 70 ? 'b-doing' : 'b-failed';
+  // ถ้ายังคีย์ข้อมูลไม่ครบทุกวัน เปอร์เซ็นต์จะต่ำเพราะข้อมูลขาด ไม่ใช่เพราะทำงานไม่ได้
+  const incomplete = (g.missingDays > 0);
+  const goalCls = incomplete ? 'b-pending'
+    : g.pct >= 90 ? 'b-done' : g.pct >= 70 ? 'b-doing' : 'b-failed';
 
   return '<div class="card">'
     + '<div class="row" style="align-items:center;margin-bottom:.5rem">'
@@ -124,12 +127,21 @@ function staffMatrixHtml(s, mx, y, m){
           + STAFF_STATUS[s.status]+'</span>' : '')+'</div></div>'
     + '</div>'
     + '<div class="row" style="gap:.4rem;margin-bottom:.6rem">'
-    +   '<span class="badge '+goalCls+'">ทำได้ '+g.done+' จาก '+g.target+' จุด-วัน · '+g.pct+'%</span>'
-    +   '<span class="pill">ทำงาน '+mx.workDays+' วัน</span>'
+    +   '<span class="badge '+goalCls+'" title="นับถึงวันที่ '+g.lastDay
+    +     ' · ไม่รวมวันหยุดและวันลาของคนนี้">ทำได้ '+g.done+' จาก '+g.target
+    +     ' จุด-วัน · '+g.pct+'%</span>'
+    +   '<span class="pill">มีข้อมูล '+g.daysWithData+' จาก '+g.workDaysElapsed+' วันทำงาน</span>'
     +   smxAreaPills(mx).map(a=>'<span class="pill" title="'+esc(a.name)+'">ตึก '
         + esc(a.sc)+' — '+a.days+' วัน</span>').join('')
     +   (mx.comments ? '<span class="pill">คอมเมนต์ '+mx.comments+' วัน</span>' : '')
     + '</div>'
+    + (incomplete
+      ? '<div class="card" style="border-color:var(--warn);background:var(--warn-soft);'
+        + 'margin:0 0 .6rem;padding:.5rem .7rem;font-size:.88rem">'
+        + '⚠️ ยังไม่มีข้อมูลการปฏิบัติงาน <b>'+g.missingDays+'</b> วัน '
+        + 'เปอร์เซ็นต์จึงต่ำกว่าความเป็นจริง — คีย์ผลให้ครบที่หน้า '
+        + '“บันทึกผลจากกระดาษ” หรือ “บันทึกประจำวัน” ก่อนใช้ตัวเลขนี้ตัดสิน</div>'
+      : '')
     + (mx.rows.length
       ? '<div class="tablewrap smx-wrap"><table class="smx"><thead><tr>'
         + '<th class="tk">รายการงาน</th>'+head+'</tr></thead><tbody>'
@@ -319,7 +331,7 @@ function exportStaffMonthExcel(list, y, m){
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [{wch:34}].concat(Array.from({length: dim}, ()=>({wch:4})));
-    const name = (s.name || 'staff').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,28) || ('คน'+(i+1));
+    const name = uniqueSheetName(wb, s.name, 'คน'+(i+1));
     XLSX.utils.book_append_sheet(wb, ws, name);
   });
 

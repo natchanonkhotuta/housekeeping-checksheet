@@ -361,6 +361,19 @@ function doPrint(){
 /* =====================================================================
    ส่งออก Excel
    ===================================================================== */
+/** ชื่อชีต Excel ที่ไม่ซ้ำและไม่มีอักขระต้องห้าม — ชื่อซ้ำทำให้ไลบรารีโยน error */
+function uniqueSheetName(wb, base, fallback){
+  let name = String(base || fallback || 'Sheet')
+    .replace(/[\\\/\?\*\[\]:]/g, '').trim().slice(0, 28) || String(fallback || 'Sheet');
+  const taken = (wb && wb.SheetNames) ? wb.SheetNames : [];
+  if(taken.indexOf(name) < 0) return name;
+  for(let i = 2; i < 200; i++){
+    const alt = name.slice(0, 27 - String(i).length) + ' ' + i;
+    if(taken.indexOf(alt) < 0) return alt;
+  }
+  return name + Math.random().toString(36).slice(2, 5);
+}
+
 function csvFallback(rowsAoA, filename){
   const csv = rowsAoA.map(r=> r.map(c=>{
     const s = (c == null) ? '' : String(c);
@@ -428,7 +441,7 @@ function exportCheckSheetExcel(specs){
     }
     ws['!merges'] = merges;
     ws['!cols'] = [{wch:4},{wch:34}].concat(Array.from({length: dim*2}, ()=>({wch:3})));
-    const name = (sp.title || 'Sheet').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,28) || ('Sheet'+(idx+1));
+    const name = uniqueSheetName(wb, sp.title, 'Sheet'+(idx+1));
     XLSX.utils.book_append_sheet(wb, ws, name);
   });
 
