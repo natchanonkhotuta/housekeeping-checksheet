@@ -348,3 +348,5 @@ table.smx td.bad{color:var(--danger);font-weight:700}
 table.smx tr.cmrow td{background:var(--surface-2);font-size:.74rem;color:var(--info)}
 .smx-note{font-size:.82rem;color:var(--muted);line-height:1.6;margin-top:.5rem}
 .smx-note b{color:var(--info);font-weight:600}
+table.smx tr.bldrow td{background:var(--info-soft);color:var(--info);font-weight:700}
+table.smx tr.bldrow td.tk{color:var(--info)}

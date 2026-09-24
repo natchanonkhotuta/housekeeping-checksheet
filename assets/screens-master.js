@@ -17,7 +17,8 @@ SCREENS.areas = async function(v){
     + '</div>'
     + '<p class="hint">ลำดับที่แสดงคือลำดับที่ใช้เรียงบน CHECK SHEET — ใช้ปุ่ม ▲▼ เพื่อจัดลำดับ</p>'
     + '<div class="tablewrap"><table><thead><tr>'
-    +   '<th class="num">ลำดับ</th><th>รหัส</th><th>ชื่อพื้นที่</th><th class="num">จำนวนงาน</th>'
+    +   '<th class="num">ลำดับ</th><th>รหัส</th><th class="num">เลขย่อ</th>'
+    +   '<th>ชื่อพื้นที่</th><th class="num">จำนวนงาน</th>'
     +   '<th>ผู้รับผิดชอบ</th><th class="num">สถานะ</th>'
     +   (editable ? '<th class="num">จัดการ</th>' : '')
     + '</tr></thead><tbody>'
@@ -27,6 +28,8 @@ SCREENS.areas = async function(v){
         return '<tr>'
           + '<td class="num">'+a.order+'</td>'
           + '<td><span class="pill">'+esc(a.code)+'</span></td>'
+          + '<td class="num"><b style="font-size:1.05rem">'+esc(areaShort(a.id))+'</b>'
+          + (a.sc ? '' : '<div class="hint" style="font-size:.7rem">อัตโนมัติ</div>')+'</td>'
           + '<td><b>'+esc(a.name)+'</b>'+(a.note?'<div class="hint">'+esc(a.note)+'</div>':'')+'</td>'
           + '<td class="num">'+nt+'</td>'
           + '<td>'+(st.length ? st.map(s=>esc(s.name.split(' ')[0])).join(', ')
@@ -40,7 +43,7 @@ SCREENS.areas = async function(v){
               + '<button class="btn sm" data-tog="'+a.id+'">'+(a.active?'ปิด':'เปิด')+'</button> '
               + '<button class="btn sm danger" data-del="'+a.id+'">ลบ</button></td>' : '')
           + '</tr>';
-      }).join('') : '<tr><td colspan="7" class="empty">ยังไม่มีพื้นที่</td></tr>')
+      }).join('') : '<tr><td colspan="8" class="empty">ยังไม่มีพื้นที่</td></tr>')
     + '</tbody></table></div>';
 
   if(!editable) return;
@@ -75,6 +78,10 @@ function areaDialog(area){
       +   '<input id="fCode" value="'+esc(a.code)+'" placeholder="เช่น F1"></div>'
       + '<div class="field"><label>ชื่อพื้นที่ *</label>'
       +   '<input id="fName" value="'+esc(a.name)+'" placeholder="เช่น ชั้นที่ 1"></div></div>'
+      + '<div class="field" style="max-width:200px"><label>เลขย่อ (ใช้ในรายงานรายเดือน)</label>'
+      +   '<input id="fSc" value="'+esc(a.sc||'')+'" placeholder="เช่น 4" maxlength="4">'
+      +   '<span class="hint">เลขสั้น ๆ ที่ใช้แทนตึกนี้ในแถว “ตึกที่ทำ” — '
+      +   'ชั้น 4 ใส่ 4 · ตึกบุคคล ใส่ 5 · เว้นว่าง = ใช้ลำดับพื้นที่</span></div>'
       + '<div class="field"><label>หมายเหตุ</label><input id="fNote" value="'+esc(a.note||'')+'"></div>'
       + '<div class="field"><label>ลำดับการแสดงผล</label>'
       +   '<input type="number" id="fOrder" value="'+a.order+'" min="1"></div>'
@@ -87,7 +94,11 @@ function areaDialog(area){
           if(D.areas(false).some(x=> x.code.toLowerCase()===code.toLowerCase() && x.id!==a.id)){
             toast('รหัสพื้นที่ซ้ำ','err'); return;
           }
-          Object.assign(a, { code, name, note:$('#fNote').value.trim(),
+          const sc = $('#fSc').value.trim();
+          if(sc && D.areas(false).some(x=> String(x.sc||'').trim() === sc && x.id !== a.id)){
+            toast('เลขย่อนี้ซ้ำกับพื้นที่อื่น — รายงานจะแยกตึกไม่ออก','err'); return;
+          }
+          Object.assign(a, { code, name, sc, note:$('#fNote').value.trim(),
                              order: clampInt($('#fOrder').value,1,999), active: $('#fActive').checked });
           if(isNew) state.data.areas.push(a);
           await saveMaster((isNew?'เพิ่ม':'แก้ไข')+'พื้นที่ '+name);

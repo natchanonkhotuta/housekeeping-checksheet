@@ -139,6 +139,7 @@ SCREENS.assign = async function(v){
     +     '<button class="btn" id="btnBulk">มอบหมายเป็นชุด</button>'
     +     '<button class="btn" id="btnFix"'+(warnUnassigned.length?'':' disabled')+'>'
     +       'เติมผู้ทดแทนอัตโนมัติ ('+warnUnassigned.length+')</button>'
+    +     '<button class="btn danger" id="btnClear">🗑️ ล้างตาราง</button>'
     +   '</div></div></div>'
 
     + '<div class="grid g4" style="margin-bottom:.8rem">'
@@ -178,30 +179,54 @@ SCREENS.assign = async function(v){
   $('#asArea').onchange = e=>{ state.ui.areaId = e.target.value; renderRoute(); };
   $('#asMode').onchange = e=>{ state.ui.calMode = e.target.value; renderRoute(); };
 
-  $('#btnGen').onclick = ()=> openModal({
-    title:'สร้าง / อัปเดตตารางงาน', width:'480px',
-    body:'<p>สร้างตารางงานเดือน <b>'+TH_MONTHS[m]+' '+beYear(y)+'</b> พื้นที่ <b>'
-      + esc(D.areaName(areaId))+'</b> จากรายการงานมาตรฐาน '+D.taskDefs(areaId,true).length+' รายการ</p>'
-      + '<label class="chk" style="display:flex;margin-bottom:.4rem">'
-      +   '<input type="checkbox" id="gOver"> เขียนทับช่องที่มีอยู่แล้ว (ล้างสถานะและผลที่บันทึกไว้)</label>'
-      + '<label class="chk'+(state.data.settings.assignOnHoliday?' on':'')+'" style="display:flex">'
-      +   '<input type="checkbox" id="gHol"'+(state.data.settings.assignOnHoliday?' checked':'')
-      +   '> มอบหมายงานในวันหยุดด้วย</label>',
-    actions:[
-      { label:'สร้างตาราง', cls:'primary', onClick: async ()=>{
-          const over = $('#gOver').checked;
-          if(over) plan.cells = {};
-          const r = generatePlan(plan, { overwrite: over, assignOnHoliday: $('#gHol').checked });
-          plan.status = 'draft';
-          await savePlan(plan.key);
-          await saveMaster('สร้างตารางงาน '+D.areaName(areaId)+' '+TH_MONTHS[m]+' '+beYear(y));
-          closeModal(); renderRoute();
-          toast('สร้าง '+r.created+' ช่องงาน (ข้ามวันหยุด '+r.skipped+')','ok');
-        }},
-      { label:'ยกเลิก', onClick: closeModal }
-    ],
-    onOpen: ()=> bindChkStyle()
-  });
+  $('#btnGen').onclick = ()=>{
+    const t2 = todayParts();
+    const defDay = (t2.y === y && t2.m === m) ? t2.d : 1;
+    openModal({
+      title:'สร้าง / อัปเดตตารางงาน', width:'520px',
+      body:'<p>สร้างตารางงานเดือน <b>'+TH_MONTHS[m]+' '+beYear(y)+'</b> พื้นที่ <b>'
+        + esc(D.areaName(areaId))+'</b> จากรายการงานมาตรฐาน '
+        + D.taskDefs(areaId,true).length+' รายการ</p>'
+        + '<div class="card" style="border-color:var(--ok);background:var(--ok-soft);margin:.2rem 0 .7rem">'
+        +   '🛡️ <b>ข้อมูลเดิมปลอดภัย</b> — การสร้าง/อัปเดตจะเติมเฉพาะช่องที่ยังไม่มี '
+        +   'ไม่ลบงานของวันที่ผ่านมา และไม่แตะช่องที่บันทึกผลไปแล้ว'
+        +   '<div class="hint" style="margin-top:.3rem">ถ้าต้องการล้างจริง ๆ '
+        +   'ใช้ปุ่ม “ล้างตาราง” แยกต่างหาก</div></div>'
+        + '<label class="chk" style="display:flex;margin-bottom:.4rem">'
+        +   '<input type="checkbox" id="gOver"> อัปเดตผู้รับผิดชอบในช่องที่ยังไม่ได้บันทึกผลด้วย</label>'
+        + '<div class="field" id="gFromBox" style="display:none;max-width:200px">'
+        +   '<label>อัปเดตตั้งแต่วันที่</label>'
+        +   '<input type="number" id="gFrom" value="'+defDay+'" min="1" max="'+daysInMonth(y,m)+'">'
+        +   '<span class="hint">วันก่อนหน้านี้จะไม่ถูกแตะ</span></div>'
+        + '<label class="chk'+(state.data.settings.assignOnHoliday?' on':'')+'" style="display:flex">'
+        +   '<input type="checkbox" id="gHol"'+(state.data.settings.assignOnHoliday?' checked':'')
+        +   '> มอบหมายงานในวันหยุดด้วย</label>',
+      actions:[
+        { label:'สร้าง / อัปเดต', cls:'primary', onClick: async ()=>{
+            const over = $('#gOver').checked;
+            const r = generatePlan(plan, {
+              overwrite: over,
+              fromDay: over ? clampInt($('#gFrom').value, 1, daysInMonth(y,m)) : 0,
+              assignOnHoliday: $('#gHol').checked
+            });
+            if(plan.status === 'approved') plan.status = 'draft';
+            await savePlan(plan.key);
+            await saveMaster('อัปเดตตารางงาน '+D.areaName(areaId)+' '+TH_MONTHS[m]+' '+beYear(y));
+            closeModal(); renderRoute();
+            toast('เพิ่ม/อัปเดต '+r.created+' ช่องงาน (ข้ามวันหยุด '+r.skipped+')','ok');
+          }},
+        { label:'ยกเลิก', onClick: closeModal }
+      ],
+      onOpen: ()=>{
+        bindChkStyle();
+        $('#gOver').addEventListener('change', e=>{
+          $('#gFromBox').style.display = e.target.checked ? '' : 'none';
+        });
+      }
+    });
+  };
+
+  $('#btnClear').onclick = ()=> clearPlanDialog(plan, y, m, areaId);
 
   $('#btnBulk').onclick = ()=> bulkAssignDialog(plan);
 
@@ -245,6 +270,69 @@ SCREENS.assign = async function(v){
   renderDayPanel(plan, state.ui.selDay
     || ((todayParts().y === y && todayParts().m === m) ? todayParts().d : 1));
 };
+
+/** ล้างตาราง — แยกออกมาเป็นปุ่มของตัวเอง และบอกชัดว่าจะลบอะไรไปบ้าง */
+function clearPlanDialog(plan, y, m, areaId){
+  const dim = daysInMonth(y, m);
+  const t = todayParts();
+  const today = (t.y === y && t.m === m) ? t.d : dim + 1;
+
+  const all = Object.values(plan.cells);
+  const withResult = all.filter(cellHasResult).length;
+  const future = all.filter(c=> c.day >= today).length;
+  const futureClean = all.filter(c=> c.day >= today && !cellHasResult(c)).length;
+
+  openModal({
+    title:'ล้างตารางงาน', width:'520px',
+    body:'<p>พื้นที่ <b>'+esc(D.areaName(areaId))+'</b> เดือน <b>'
+      + TH_MONTHS[m]+' '+beYear(y)+'</b> มีทั้งหมด <b>'+all.length+'</b> ช่องงาน '
+      + 'ในจำนวนนี้ <b>'+withResult+'</b> ช่องบันทึกผลการปฏิบัติงานไปแล้ว</p>'
+      + '<div class="field"><label>เลือกขอบเขตที่จะล้าง</label><select id="clScope">'
+      +   '<option value="futureClean">เฉพาะวันที่ '+today+' เป็นต้นไป ที่ยังไม่ได้บันทึกผล ('
+      +     futureClean+' ช่อง) — ปลอดภัยที่สุด</option>'
+      +   '<option value="future">ตั้งแต่วันที่ '+today+' เป็นต้นไป ทั้งหมด ('+future+' ช่อง)</option>'
+      +   '<option value="noResult">ทั้งเดือน เฉพาะช่องที่ยังไม่ได้บันทึกผล ('
+      +     (all.length - withResult)+' ช่อง)</option>'
+      +   '<option value="all">ทั้งเดือน ทุกช่อง ('+all.length+' ช่อง) — ลบผลที่บันทึกไว้ด้วย</option>'
+      + '</select></div>'
+      + '<p class="hint" id="clWarn"></p>'
+      + '<p class="hint">บันทึกประจำวันและคอมเมนต์รายบุคคลจะไม่ถูกลบ '
+      + 'แต่ถ้าล้างช่องที่บันทึกผลแล้ว รายงานรายเดือนจะไม่นับงานเหล่านั้นอีก</p>',
+    actions:[
+      { label:'ล้างตาราง', cls:'danger', onClick: async ()=>{
+          const scope = $('#clScope').value;
+          let n = 0;
+          Object.keys(plan.cells).forEach(k=>{
+            const c = plan.cells[k];
+            const isFuture = (c.day >= today);
+            const clean = !cellHasResult(c);
+            const hit = (scope === 'all')
+              || (scope === 'noResult' && clean)
+              || (scope === 'future' && isFuture)
+              || (scope === 'futureClean' && isFuture && clean);
+            if(hit){ delete plan.cells[k]; n++; }
+          });
+          await savePlan(plan.key);
+          await saveMaster('ล้างตารางงาน '+D.areaName(areaId)+' '+TH_MONTHS[m]+' '+beYear(y)
+            +' — '+n+' ช่อง');
+          closeModal(); renderRoute();
+          toast('ล้าง '+n+' ช่องงานแล้ว','ok');
+        }},
+      { label:'ยกเลิก', onClick: closeModal }
+    ],
+    onOpen:()=>{
+      const upd = ()=>{
+        const s = $('#clScope').value;
+        $('#clWarn').innerHTML = (s === 'all' || s === 'future')
+          ? '<span style="color:var(--danger)">⚠️ ตัวเลือกนี้จะลบผลการปฏิบัติงานที่บันทึกไว้ด้วย '
+            + 'ควรสำรองข้อมูลก่อน</span>'
+          : '✓ ตัวเลือกนี้ไม่แตะช่องที่บันทึกผลไปแล้ว';
+      };
+      $('#clScope').onchange = upd;
+      upd();
+    }
+  });
+}
 
 /* ---- ปฏิทินรายเดือน / รายสัปดาห์ / รายวัน ---- */
 function renderCalendar(plan){

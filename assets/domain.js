@@ -68,6 +68,13 @@ function staffOffOn(staffId, iso){
 /* ---------------------------------------------------------------
    3. รายการงานมาตรฐาน → ตารางงานรายเดือน
    --------------------------------------------------------------- */
+/** ช่องนี้มีผลการปฏิบัติงานบันทึกไว้แล้วหรือยัง — ถ้ามี ห้ามเขียนทับโดยอัตโนมัติ */
+function cellHasResult(c){
+  if(!c) return false;
+  if(!ST_OPEN.includes(c.st)) return true;      // done/verified/failed/rework/skipped/leave
+  return !!(c.by || c.at || c.rec || c.vby || c.note);
+}
+
 /** ช่วงเวลาของงาน — 'allday' หมายถึงทั้งเช้าและบ่าย */
 function periodsOf(td){ return td.period === 'allday' ? PERIOD_KEYS.slice() : [td.period]; }
 
@@ -108,8 +115,12 @@ function generatePlan(plan, opts){
       periodsOf(td).forEach(pk=>{
         const k = cellKey(td.id, d, pk);
         const existing = plan.cells[k];
-        if(existing && !opts.overwrite) return;      // ไม่เขียนทับของเดิม
-        if(existing && existing.locked) return;      // ช่องที่ถูกล็อกไว้
+        if(existing){
+          if(!opts.overwrite) return;                       // ไม่เขียนทับของเดิม
+          if(existing.locked) return;                       // ช่องที่ถูกล็อกไว้
+          if(cellHasResult(existing)) return;               // มีผลบันทึกแล้ว — ห้ามแตะ
+          if(opts.fromDay && d < opts.fromDay) return;      // วันที่ผ่านมา — ห้ามแตะ
+        }
 
         if((hd || sundayOff) && !assignOnHoliday){ skipped++; return; }
 
@@ -316,6 +327,46 @@ function areaOrderOf(areaId){
   return a ? (a.order || 0) : 999;
 }
 
+/** เรียงพื้นที่ตามเลขย่อ — เลขล้วนเรียงตามค่าตัวเลข ที่เหลือเรียงตามตัวอักษร */
+function compareAreaShort(a, b){
+  const sa = areaShort(a), sb = areaShort(b);
+  const na = parseFloat(sa), nb = parseFloat(sb);
+  const bothNum = !isNaN(na) && !isNaN(nb) && /^\d+$/.test(sa) && /^\d+$/.test(sb);
+  if(bothNum) return na - nb;
+  return String(sa).localeCompare(String(sb), 'th');
+}
+
+/**
+ * ตารางเลขย่อของทุกพื้นที่
+ * พื้นที่ที่กรอกเลขเองได้เลขนั้น · ที่เหลือได้เลขว่างตัวถัดไปโดยไม่ชนกัน
+ * (ถ้าปล่อยให้ใช้ "ลำดับพื้นที่" ตรง ๆ จะชนกับเลขที่ผู้ใช้กรอกเอง)
+ */
+let _areaShortCache = null;
+function areaShortMap(){
+  const areas = D.areas(false);
+  const sig = areas.map(a=> a.id+':'+(a.sc || '')+':'+(a.order || 0)).join('|');
+  if(_areaShortCache && _areaShortCache.sig === sig) return _areaShortCache.map;
+
+  const map = {}, used = {};
+  areas.forEach(a=>{
+    const sc = String(a.sc == null ? '' : a.sc).trim();
+    if(sc){ map[a.id] = sc; used[sc] = true; }
+  });
+  let n = 1;
+  areas.forEach(a=>{
+    if(map[a.id]) return;
+    while(used[String(n)]) n++;
+    map[a.id] = String(n);
+    used[String(n)] = true;
+  });
+
+  _areaShortCache = { sig, map };
+  return map;
+}
+function areaShort(areaId){
+  return areaShortMap()[areaId] || '?';
+}
+
 /** พื้นที่ที่แม่บ้านคนนี้รับผิดชอบ (ใช้จำกัดตัวเลือกตอนเพิ่มงานด้วยมือ) */
 function areasOfStaff(staffId){
   const s = D.staff(staffId);
@@ -339,35 +390,90 @@ function dailyStatus(y, m, day, staffId){
 
 /**
  * ตารางสรุปรายเดือนของแม่บ้าน 1 คน
- * rows  = จุดที่คนนั้นทำจริงทั้งเดือน (รวมทุกพื้นที่)
- * byDay = { วันที่: { marks:{taskId:'done'|'failed'}, cm, status } }
+ * rows  = รายการงาน "รวมตามชื่อ" — งานชื่อเดียวกันคนละพื้นที่นับเป็นแถวเดียว
+ * byDay = { วันที่: { marks:{rowKey:'done'|'failed'}, areas:[areaId], cm, status } }
  */
 function staffMonthMatrix(y, m, staffId, idx){
   idx = idx || monthWorkIndex(y, m);
   const dim = daysInMonth(y, m);
   const rowsMap = {};
   const byDay = {};
+  const areaDays = {};                 // areaId -> จำนวนวันที่ไปทำ
   let workDays = 0, marks = 0, comments = 0;
 
   for(let d = 1; d <= dim; d++){
     const w = dailyWork(y, m, d, staffId, idx);
-    const cell = { marks:{}, cm: w.rec.cm || '', status: dailyStatus(y, m, d, staffId) };
+    const cell = {
+      marks:{}, areas:[], cm: w.rec.cm || '',
+      status: dailyStatus(y, m, d, staffId)
+    };
+
     w.items.forEach(it=>{
-      if(!rowsMap[it.taskId])
-        rowsMap[it.taskId] = { taskId: it.taskId, td: D.taskDef(it.taskId), areaId: it.areaId };
-      cell.marks[it.taskId] = it.st;
+      const td = D.taskDef(it.taskId);
+      const key = taskRowKey(td);
+      if(!rowsMap[key])
+        rowsMap[key] = { key, name: td.name, order: (td.order || 999), taskIds: [] };
+      // งานชื่อเดียวกันอาจมีลำดับต่างกันในแต่ละพื้นที่ — ใช้ลำดับที่น้อยที่สุด
+      rowsMap[key].order = Math.min(rowsMap[key].order, td.order || 999);
+      if(!rowsMap[key].taskIds.includes(it.taskId)) rowsMap[key].taskIds.push(it.taskId);
+      // ✗ ชนะ ✓ เพื่อให้เห็นปัญหา ไม่ถูกกลบเมื่อรวมแถว
+      if(cell.marks[key] !== 'failed') cell.marks[key] = it.st;
+      if(!cell.areas.includes(it.areaId)) cell.areas.push(it.areaId);
       marks++;
     });
+
+    cell.areas.sort(compareAreaShort);
+    cell.areas.forEach(a=>{ areaDays[a] = (areaDays[a] || 0) + 1; });
+
     if(w.items.length) workDays++;
     if(cell.cm) comments++;
     byDay[d] = cell;
   }
 
   const rows = Object.keys(rowsMap).map(k=> rowsMap[k])
-    .sort((a,b)=> areaOrderOf(a.areaId) - areaOrderOf(b.areaId)
-      || ((a.td.order || 0) - (b.td.order || 0)));
+    .sort((a,b)=> (a.order - b.order) || a.name.localeCompare(b.name, 'th'));
 
-  return { rows, byDay, dim, workDays, marks, comments };
+  const goal = staffMonthGoal(y, m, staffId, idx);
+
+  return { rows, byDay, dim, workDays, marks, comments, areaDays, goal };
+}
+
+/** งานชื่อเดียวกันถือเป็นแถวเดียวกัน ไม่ว่าจะอยู่พื้นที่ไหน */
+function taskRowKey(td){
+  return String(td.name || '').trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * เป้าหมายของเดือน — นับเป็น "จุด-วัน" (งาน 1 อย่าง x 1 วัน = 1 หน่วย)
+ * เป้า   = งานที่ตารางมอบหมายให้คนนี้ รวมทุกพื้นที่ (ไม่นับงานที่งดปฏิบัติ)
+ * ทำได้  = งานที่ทำจริง รวมงานที่บันทึกเพิ่มด้วยมือ
+ */
+function staffMonthGoal(y, m, staffId, idx){
+  idx = idx || monthWorkIndex(y, m);
+  const planned = new Set();
+
+  D.areas(false).forEach(a=>{
+    const p = state.plans[planKey(y, m, a.id)];
+    if(!p) return;
+    for(const k in p.cells){
+      const c = p.cells[k];
+      if(c.s !== staffId) continue;
+      if(c.st === 'skipped' || c.st === 'leave') continue;
+      planned.add(c.t + '|' + c.day);
+    }
+  });
+
+  const dim = daysInMonth(y, m);
+  const done = new Set();
+  for(let d = 1; d <= dim; d++){
+    dailyWork(y, m, d, staffId, idx).items.forEach(it=>{
+      if(it.st === 'done') done.add(it.taskId + '|' + d);
+    });
+  }
+
+  const target = planned.size;
+  const hit = done.size;
+  return { target, done: hit, pct: target ? Math.round(hit / target * 100) : 0 };
 }
 
 /** โหลดข้อมูลที่จำเป็นทั้งหมดของเดือน (ตารางงานทุกพื้นที่ + บันทึกประจำวัน) */
