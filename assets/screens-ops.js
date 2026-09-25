@@ -109,14 +109,21 @@ SCREENS.assign = async function(v){
   const stats = planStats(plan);
 
   /* ---- คำเตือน ---- */
-  const warnUnassigned = [], warnHoliday = [], warnClash = [];
+  const warnUnassigned = [], warnHoliday = [], warnClash = [], warnInactive = [];
+  const inactiveWho = {};
   for(const k in plan.cells){
     const c = plan.cells[k];
     const iso = ymd(y, m, c.day);
     if(!c.s && c.st !== 'skipped') warnUnassigned.push(c);
     if(c.s){
-      const off = staffOffOn(c.s, iso);
-      if(off) warnHoliday.push({ c, off });
+      const inact = staffInactive(c.s);
+      if(inact){
+        warnInactive.push({ k, c, label: inact });
+        inactiveWho[c.s] = inact;
+      } else {
+        const off = staffOffOn(c.s, iso);
+        if(off) warnHoliday.push({ c, off });
+      }
       const cl = findClash(y, m, c.day, c.p, c.s, areaId);
       if(cl) warnClash.push({ c, cl });
     }
@@ -139,6 +146,7 @@ SCREENS.assign = async function(v){
     +     '<button class="btn" id="btnBulk">มอบหมายเป็นชุด</button>'
     +     '<button class="btn" id="btnFix"'+(warnUnassigned.length?'':' disabled')+'>'
     +       'เติมผู้ทดแทนอัตโนมัติ ('+warnUnassigned.length+')</button>'
+    +     '<button class="btn" id="btnAssignArea">👥 ตั้งผู้รับผิดชอบตามพื้นที่</button>'
     +     '<button class="btn danger" id="btnClear">🗑️ ล้างตาราง</button>'
     +   '</div></div></div>'
 
@@ -151,6 +159,17 @@ SCREENS.assign = async function(v){
     +   '<div class="stat bad"><div class="lbl">ชนวันหยุด/ตารางชน</div><div class="val">'
     +     (warnHoliday.length + warnClash.length)+'</div></div>'
     + '</div>'
+
+    + (warnInactive.length
+      ? '<div class="card" style="border-color:var(--danger);background:var(--danger-soft)">'
+        + '<h3>🚫 มอบหมายให้คนที่ไม่ได้ปฏิบัติงานแล้ว</h3>'
+        + '<div>งาน <b>'+warnInactive.length+'</b> ช่อง ยังเป็นชื่อของ '
+        + Object.keys(inactiveWho).map(id=> esc(D.staffName(id))+' ('+esc(inactiveWho[id])+')').join(', ')
+        + ' — ชื่อนี้จะถูกพิมพ์ลงใบเช็คงานด้วย</div>'
+        + '<div class="row" style="margin-top:.5rem">'
+        + '<button class="btn danger" id="btnFixInactive">แทนที่ด้วยผู้รับผิดชอบพื้นที่นี้ ('
+        + warnInactive.length+' ช่อง)</button></div></div>'
+      : '')
 
     + ((warnUnassigned.length || warnHoliday.length || warnClash.length)
       ? '<div class="card" style="border-color:var(--warn)"><h3>⚠️ คำเตือน</h3>'
@@ -227,6 +246,35 @@ SCREENS.assign = async function(v){
   };
 
   $('#btnClear').onclick = ()=> clearPlanDialog(plan, y, m, areaId);
+  $('#btnAssignArea').onclick = ()=> assignByAreaDialog(plan, y, m, areaId);
+
+  if($('#btnFixInactive')) $('#btnFixInactive').onclick = ()=>{
+    const pool = D.staffOfArea(areaId);
+    if(!pool.length){
+      toast('พื้นที่นี้ยังไม่มีแม่บ้านที่ปฏิบัติงานอยู่ — กำหนดพื้นที่รับผิดชอบที่หน้าจัดการข้อมูลแม่บ้านก่อน','err');
+      return;
+    }
+    confirmDialog('แทนที่ชื่อในงาน <b>'+warnInactive.length+'</b> ช่อง ด้วยผู้รับผิดชอบพื้นที่นี้?'
+      + '<div class="hint" style="margin-top:.4rem">ระบบจะเลือกคนที่ว่างในวันนั้นให้ '
+      + 'และ<b>ไม่แตะช่องที่บันทึกผลไปแล้ว</b></div>', async ()=>{
+        let n = 0, skip = 0;
+        warnInactive.forEach(w=>{
+          const c = plan.cells[w.k];
+          if(!c) return;
+          if(cellHasResult(c)){ skip++; return; }
+          const sub = suggestSubstitute(areaId, ymd(y, m, c.day), c.s);
+          if(!sub){ skip++; return; }
+          c.s = sub;
+          c.st = 'assigned';
+          c.note = 'แทน '+D.staffName(w.c.s)+' ('+w.label+')';
+          n++;
+        });
+        await savePlan(plan.key);
+        await saveMaster('แทนที่ผู้รับผิดชอบที่ไม่ได้ปฏิบัติงาน '+n+' ช่อง');
+        renderRoute();
+        toast('แทนที่ '+n+' ช่อง'+(skip ? ' (ข้าม '+skip+' ช่อง)' : ''),'ok');
+      }, 'แทนที่', 'danger');
+  };
 
   $('#btnBulk').onclick = ()=> bulkAssignDialog(plan);
 
@@ -270,6 +318,94 @@ SCREENS.assign = async function(v){
   renderDayPanel(plan, state.ui.selDay
     || ((todayParts().y === y && todayParts().m === m) ? todayParts().d : 1));
 };
+
+/**
+ * ตั้งผู้รับผิดชอบใหม่ทั้งตารางตาม "ใครดูแลพื้นที่นี้"
+ * แก้ปัญหาที่พบบ่อย: เปลี่ยนพื้นที่รับผิดชอบของแม่บ้านแล้ว แต่ตารางที่สร้างไว้ยังเป็นชื่อเดิม
+ */
+function assignByAreaDialog(plan, y, m, areaId){
+  const dim = daysInMonth(y, m);
+  const t = todayParts();
+  const defDay = (t.y === y && t.m === m) ? t.d : 1;
+  const pool = D.staffOfArea(areaId);
+  const main = pool.filter(s=> s.mainAreaId === areaId);
+  const sub  = pool.filter(s=> s.mainAreaId !== areaId);
+
+  const current = {};
+  Object.values(plan.cells).forEach(c=>{ if(c.s) current[c.s] = (current[c.s] || 0) + 1; });
+
+  openModal({
+    title:'ตั้งผู้รับผิดชอบตามพื้นที่', width:'540px',
+    body:'<p>พื้นที่ <b>'+esc(D.areaName(areaId))+'</b> เดือน '+TH_MONTHS[m]+' '+beYear(y)+'</p>'
+      + '<div class="card" style="margin:.2rem 0 .7rem;padding:.55rem .7rem">'
+      +   '<div class="hint">ผู้รับผิดชอบพื้นที่นี้ตามข้อมูลแม่บ้านปัจจุบัน</div>'
+      +   (pool.length
+          ? '<div style="margin-top:.3rem">'
+            + main.map(s=>'<span class="badge b-done">'+esc(s.name)+' · พื้นที่หลัก</span> ').join('')
+            + sub.map(s=>'<span class="badge b-assigned">'+esc(s.name)+' · พื้นที่เสริม</span> ').join('')
+            + '</div>'
+          : '<div style="color:var(--danger)">— ยังไม่มีแม่บ้านที่ปฏิบัติงานรับผิดชอบพื้นที่นี้ —</div>')
+      + '</div>'
+      + '<div class="card" style="margin:0 0 .7rem;padding:.55rem .7rem">'
+      +   '<div class="hint">ชื่อที่อยู่ในตารางตอนนี้</div><div style="margin-top:.3rem">'
+      +   (Object.keys(current).length
+          ? Object.keys(current).map(id=>{
+              const inact = staffInactive(id);
+              return '<span class="badge '+(inact ? 'b-failed' : 'b-pending')+'">'
+                + esc(D.staffName(id))+' '+current[id]+' ช่อง'
+                + (inact ? ' · '+esc(inact) : '')+'</span> ';
+            }).join('')
+          : '<span class="hint">— ยังไม่มี —</span>')
+      + '</div></div>'
+      + '<div class="field"><label>มอบหมายให้</label><select id="abWho">'
+      +   '<option value="__auto">— ตามพื้นที่ (ระบบเลือกคนที่ว่างให้) —</option>'
+      +   selOptions(D.staffAll(true),'id','name')+'</select></div>'
+      + '<div class="row"><div class="field" style="max-width:160px"><label>ตั้งแต่วันที่</label>'
+      +   '<input type="number" id="abFrom" value="'+defDay+'" min="1" max="'+dim+'"></div>'
+      + '<div class="field"><label>&nbsp;</label>'
+      +   '<label class="chk on" style="display:flex"><input type="checkbox" id="abSkipOff" checked> '
+      +   'ข้ามวันที่คนนั้นหยุด</label></div></div>'
+      + '<p class="hint">ช่องที่บันทึกผลการปฏิบัติงานไปแล้วจะไม่ถูกแตะ '
+      + 'เพื่อไม่ให้ประวัติเปลี่ยนชื่อคนทำย้อนหลัง</p>',
+    actions:[
+      { label:'ตั้งผู้รับผิดชอบ', cls:'primary', onClick: async ()=>{
+          const who = $('#abWho').value;
+          const from = clampInt($('#abFrom').value, 1, dim);
+          const skipOff = $('#abSkipOff').checked;
+          if(who === '__auto' && !pool.length){
+            toast('พื้นที่นี้ยังไม่มีแม่บ้านรับผิดชอบ เลือกชื่อเองหรือไปกำหนดที่หน้าจัดการข้อมูลแม่บ้าน','err');
+            return;
+          }
+          let n = 0, kept = 0, noOne = 0;
+          for(const k in plan.cells){
+            const c = plan.cells[k];
+            if(c.day < from) continue;
+            if(cellHasResult(c)){ kept++; continue; }
+            const iso = ymd(y, m, c.day);
+            let sid = who;
+            if(who === '__auto'){
+              sid = suggestSubstitute(areaId, iso, '');
+              if(!sid){ noOne++; continue; }
+            } else if(skipOff && (staffInactive(sid) || staffOffOn(sid, iso))){
+              continue;
+            }
+            c.s = sid;
+            c.st = 'assigned';
+            delete c.note;
+            n++;
+          }
+          await savePlan(plan.key);
+          await saveMaster('ตั้งผู้รับผิดชอบตามพื้นที่ '+D.areaName(areaId)+' '+n+' ช่อง');
+          closeModal(); renderRoute();
+          toast('ตั้งผู้รับผิดชอบ '+n+' ช่อง'
+            + (kept ? ' · คงเดิม '+kept+' ช่องที่บันทึกผลแล้ว' : '')
+            + (noOne ? ' · ไม่มีคนว่าง '+noOne+' ช่อง' : ''), 'ok');
+        }},
+      { label:'ยกเลิก', onClick: closeModal }
+    ],
+    onOpen: ()=> bindChkStyle()
+  });
+}
 
 /** ล้างตาราง — แยกออกมาเป็นปุ่มของตัวเอง และบอกชัดว่าจะลบอะไรไปบ้าง */
 function clearPlanDialog(plan, y, m, areaId){
@@ -711,7 +847,8 @@ function bulkAssignDialog(plan){
       +   '<option value="">ทั้งเช้าและบ่าย</option><option value="morning">เฉพาะเช้า</option>'
       +   '<option value="afternoon">เฉพาะบ่าย</option></select></div>'
       + '<label class="chk on" style="display:flex">'
-      +   '<input type="checkbox" id="bSkipOff" checked> ข้ามวันที่แม่บ้านคนนี้หยุด</label>',
+      +   '<input type="checkbox" id="bSkipOff" checked> ข้ามวันที่แม่บ้านคนนี้หยุด</label>'
+      + '<p class="hint">ช่องที่บันทึกผลไปแล้วจะไม่ถูกเปลี่ยนชื่อผู้รับผิดชอบ</p>',
     actions:[
       { label:'มอบหมาย', cls:'primary', onClick: async ()=>{
           const sid = $('#bStaff').value;
@@ -725,12 +862,14 @@ function bulkAssignDialog(plan){
             from = Math.max(1, selDay - dowOf(plan.y, plan.m, selDay));
             to   = Math.min(dim, from + 6);
           }
-          let n = 0, skipped = 0;
+          let n = 0, skipped = 0, kept = 0;
           for(const k in plan.cells){
             const c = plan.cells[k];
             if(c.day < from || c.day > to) continue;
             if(pf && c.p !== pf) continue;
             if(tsel.length && !tsel.includes(c.t)) continue;
+            // ไม่เปลี่ยนชื่อคนทำย้อนหลังในช่องที่บันทึกผลไปแล้ว
+            if(cellHasResult(c)){ kept++; continue; }
             if(skipOff && staffOffOn(sid, ymd(plan.y, plan.m, c.day))){ skipped++; continue; }
             c.s = sid;
             if(c.st === 'pending') c.st = 'assigned';
@@ -739,7 +878,9 @@ function bulkAssignDialog(plan){
           await savePlan(plan.key);
           await saveMaster('มอบหมายเป็นชุดให้ '+D.staffName(sid)+' '+n+' ช่อง');
           closeModal(); renderRoute();
-          toast('มอบหมาย '+n+' ช่อง'+(skipped?' (ข้ามวันหยุด '+skipped+')':''),'ok');
+          toast('มอบหมาย '+n+' ช่อง'
+            + (skipped ? ' · ข้ามวันหยุด '+skipped : '')
+            + (kept ? ' · คงเดิม '+kept+' ช่องที่บันทึกผลแล้ว' : ''),'ok');
         }},
       { label:'ยกเลิก', onClick: closeModal }
     ],

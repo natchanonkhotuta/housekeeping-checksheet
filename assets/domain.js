@@ -53,6 +53,20 @@ function leaveOn(staffId, iso){
  * แม่บ้านคนนี้หยุดในวันนั้นหรือไม่
  * @returns {null | {kind:'weekly'|'leave'|'holiday', label:string, sub?:string}}
  */
+/**
+ * แม่บ้านคนนี้ "ไม่อยู่ในสถานะปฏิบัติงาน" หรือไม่ (ลาพัก / พ้นสภาพ)
+ * แยกจาก staffOffOn() เพราะอันนั้นเป็นเรื่องรายวัน ส่วนอันนี้เป็นสถานะถาวร
+ * ใช้ตอนมอบหมายงานและตอนเตือน แต่ไม่ใช้กับรายงานย้อนหลัง
+ * (ไม่งั้นงานที่เคยทำจริงตอนยังทำงานอยู่จะกลายเป็น "วันหยุด" ทั้งหมด)
+ */
+function staffInactive(staffId){
+  const s = D.staff(staffId);
+  if(!s) return 'ไม่พบข้อมูลพนักงาน';
+  if(s.status === 'resigned') return 'พ้นสภาพ';
+  if(s.status === 'leave') return 'ลาพัก';
+  return '';
+}
+
 function staffOffOn(staffId, iso){
   const s = D.staff(staffId); if(!s) return null;
   const lv = leaveOn(staffId, iso);
@@ -72,7 +86,9 @@ function staffOffOn(staffId, iso){
 function cellHasResult(c){
   if(!c) return false;
   if(!ST_OPEN.includes(c.st)) return true;      // done/verified/failed/rework/skipped/leave
-  return !!(c.by || c.at || c.rec || c.vby || c.note);
+  // เฉพาะร่องรอยการบันทึกผลจริงเท่านั้น — "หมายเหตุ" ไม่นับ
+  // (generatePlan เขียนหมายเหตุอัตโนมัติ เช่น "ทดแทน X (ลาป่วย)" ซึ่งไม่ใช่ผลการทำงาน)
+  return !!(c.by || c.at || c.rec || c.vby);
 }
 
 /** ช่วงเวลาของงาน — 'allday' หมายถึงทั้งเช้าและบ่าย */
@@ -127,7 +143,9 @@ function generatePlan(plan, opts){
         let staffId = td.defaultStaffId || '';
         let note = '';
         if(staffId){
-          const off = staffOffOn(staffId, iso);
+          // สถานะถาวร (ลาพัก/พ้นสภาพ) มาก่อนวันหยุดรายวัน
+          const inact = staffInactive(staffId);
+          const off = inact ? { kind:'inactive', label: inact, sub:'' } : staffOffOn(staffId, iso);
           if(off){
             const sub = off.sub || suggestSubstitute(areaId, iso, staffId);
             if(sub){
