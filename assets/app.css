@@ -350,3 +350,29 @@ table.smx tr.cmrow td{background:var(--surface-2);font-size:.74rem;color:var(--i
 .smx-note b{color:var(--info);font-weight:600}
 table.smx tr.bldrow td{background:var(--info-soft);color:var(--info);font-weight:700}
 table.smx tr.bldrow td.tk{color:var(--info)}
+
+/* ---------- ตารางกะ ---------- */
+.rs-wrap{max-height:70vh;overflow:auto}
+table.rs{border-collapse:separate;border-spacing:0;width:auto;min-width:100%;font-size:.82rem}
+table.rs th,table.rs td{border:1px solid var(--border);padding:.2rem .25rem;text-align:center;background:var(--surface)}
+table.rs thead th{position:sticky;top:0;z-index:3;background:var(--surface-2);font-weight:600}
+table.rs th.nm,table.rs td.nm{position:sticky;left:0;z-index:4;text-align:left;
+  min-width:160px;max-width:190px;padding:.3rem .5rem;background:var(--surface)}
+table.rs thead th.nm{z-index:5;background:var(--surface-2)}
+table.rs td.nm{cursor:pointer}
+table.rs td.nm:hover{background:var(--brand-soft)}
+table.rs td.nm .hint{font-size:.72rem}
+table.rs th.d{min-width:30px;font-variant-numeric:tabular-nums;cursor:pointer}
+table.rs th.d:hover{background:var(--brand-soft);color:var(--brand)}
+table.rs th.d .dw{display:block;font-size:.65rem;font-weight:400;color:var(--muted)}
+table.rs td.c{width:30px;min-width:30px;height:30px;cursor:pointer;font-weight:700;
+  font-size:.78rem;user-select:none}
+table.rs td.c:hover{outline:2px solid var(--brand);outline-offset:-2px}
+table.rs .sun{background:var(--sunday)}
+table.rs .hol{background:var(--holiday)}
+table.rs td.off{background:var(--leave);color:#6b4ea8}
+table.rs td.on{background:var(--ok-soft);color:var(--ok)}
+table.rs td.sh-B{background:var(--info-soft);color:var(--info)}
+table.rs th.sum,table.rs td.sum{min-width:54px;background:var(--surface-2)}
+table.rs td.sum .hint{font-size:.7rem}
+.rs-pick{margin-right:.2rem}

@@ -544,3 +544,188 @@ async function loadMonthAll(y, m){
   await loadMonthPlans(y, m);
   await loadDaily(y, m);
 }
+
+/* =====================================================================
+   8. รอบการทำงาน 21 – 20 และตารางกะ
+   ---------------------------------------------------------------------
+   รอบหนึ่งเริ่มวันที่ 21 ของเดือนหนึ่ง ถึงวันที่ 20 ของเดือนถัดไป
+   ข้อมูลยังเก็บเป็นรายเดือนปฏิทินเหมือนเดิม — "รอบ" เป็นแค่มุมมอง
+   จึงไม่ต้องย้ายข้อมูลเก่าและไม่เสี่ยงข้อมูลหาย
+   ===================================================================== */
+const CYCLE_START_DAY = 21;
+
+function nextMonthOf(y, m){ return (m === 11) ? { y:y+1, m:0 } : { y, m:m+1 }; }
+function prevMonthOf(y, m){ return (m === 0)  ? { y:y-1, m:11 } : { y, m:m-1 }; }
+
+/** วันสุดท้ายของรอบที่เริ่มเดือน (y,m) */
+function cycleEndOf(y, m){
+  const n = nextMonthOf(y, m);
+  return { y:n.y, m:n.m, d: CYCLE_START_DAY - 1 };
+}
+
+/** ทุกวันในรอบ เรียงตามลำดับ — [{ y, m, d, iso }] */
+function cycleDays(y, m){
+  const out = [];
+  const dim = daysInMonth(y, m);
+  for(let d = CYCLE_START_DAY; d <= dim; d++) out.push({ y, m, d, iso: ymd(y, m, d) });
+  const n = nextMonthOf(y, m);
+  for(let d = 1; d <= CYCLE_START_DAY - 1; d++) out.push({ y:n.y, m:n.m, d, iso: ymd(n.y, n.m, d) });
+  return out;
+}
+
+/** เดือนปฏิทินที่รอบนี้พาดผ่าน (2 เดือนเสมอ) */
+function cycleMonths(y, m){
+  const n = nextMonthOf(y, m);
+  return [{ y, m }, { y:n.y, m:n.m }];
+}
+
+function cycleLabel(y, m){
+  const e = cycleEndOf(y, m);
+  return thDate(ymd(y, m, CYCLE_START_DAY)) + ' – ' + thDate(ymd(e.y, e.m, e.d));
+}
+function cycleLabelShort(y, m){
+  const e = cycleEndOf(y, m);
+  return CYCLE_START_DAY + ' ' + TH_MONTHS_SHORT[m] + ' – ' + e.d + ' ' + TH_MONTHS_SHORT[e.m]
+       + ' ' + beYear(e.y);
+}
+
+/** รอบที่ครอบคลุมวันที่นี้ */
+function cycleOfDate(y, m, d){
+  if(d >= CYCLE_START_DAY) return { y, m };
+  return prevMonthOf(y, m);
+}
+/** รอบปัจจุบันตามวันนี้ */
+function currentCycle(){
+  const t = todayParts();
+  return cycleOfDate(t.y, t.m, t.d);
+}
+
+/* ---------- กะการทำงาน ---------- */
+function shiftList(){ return state.data.shifts || []; }
+function shiftById(id){ return shiftList().find(s=> s.id === id) || null; }
+function shiftByCode(code){ return shiftList().find(s=> s.code === code) || null; }
+function shiftLabel(id){
+  const s = shiftById(id);
+  return s ? (s.code + ' · ' + s.name + ' ' + s.start + '–' + s.end) : '';
+}
+
+/* ---------- ตารางกะ (เก็บรายเดือนปฏิทิน) ---------- */
+async function loadRoster(y, m){
+  const k = ymKey(y, m);
+  if(state.rosters[k]) return state.rosters[k];
+  const got = await Store.get('shift:'+k);
+  state.rosters[k] = got || { key:k, y, m, rec:{}, createdAt:nowIso() };
+  if(got) registerIndexKey('rosterIndex', k);
+  return state.rosters[k];
+}
+async function saveRoster(y, m){
+  const k = ymKey(y, m);
+  const r = state.rosters[k];
+  if(!r) return;
+  r.updatedAt = nowIso();
+  registerIndexKey('rosterIndex', k);
+  await Store.set('shift:'+k, r);
+}
+/** โหลดตารางกะของทั้งรอบ (2 เดือน) */
+async function loadCycleRosters(y, m){
+  for(const c of cycleMonths(y, m)) await loadRoster(c.y, c.m);
+}
+
+/** รายการกะของคนนั้นในวันนั้น */
+function rosterRec(y, m, staffId, day, create){
+  const r = state.rosters[ymKey(y, m)];
+  if(!r) return {};
+  const k = staffId + '|' + day;
+  if(!r.rec[k] && create) r.rec[k] = { s: staffId, d: day };
+  return r.rec[k] || {};
+}
+function setRosterRec(y, m, staffId, day, patch){
+  const r = state.rosters[ymKey(y, m)];
+  if(!r) return null;
+  const k = staffId + '|' + day;
+  const rec = r.rec[k] || (r.rec[k] = { s: staffId, d: day });
+  Object.assign(rec, patch);
+  rec.by = state.session ? state.session.name : '';
+  rec.at = nowIso();
+  if(!rec.sh && !rec.ar && !rec.off) delete r.rec[k];   // ช่องว่างไม่ต้องเก็บ
+  return rec;
+}
+
+/** สรุปของคนหนึ่งในรอบ — ใช้ทั้งบนจอและตอนพิมพ์ */
+function rosterSummary(y, m, staffId){
+  let work = 0, off = 0, blank = 0;
+  const byShift = {}, byArea = {};
+  cycleDays(y, m).forEach(dd=>{
+    const rec = rosterAt(dd, staffId);
+    if(rec.off){ off++; return; }
+    if(!rec.sh && !rec.ar){ blank++; return; }
+    work++;
+    if(rec.sh) byShift[rec.sh] = (byShift[rec.sh] || 0) + 1;
+    if(rec.ar) byArea[rec.ar] = (byArea[rec.ar] || 0) + 1;
+  });
+  return { work, off, blank, byShift, byArea };
+}
+
+/** อ่านช่องตารางกะของวันใดก็ได้ในรอบ (เลือกเดือนให้เอง) */
+function rosterAt(dd, staffId){
+  return rosterRec(dd.y, dd.m, staffId, dd.d);
+}
+
+/**
+ * สร้าง/อัปเดตเช็คลิสต์ปฏิบัติงานจากตารางกะของรอบนั้น
+ * สำหรับทุกวันในรอบ: ใครถูกจัดให้อยู่พื้นที่ไหน ก็สร้างงานของพื้นที่นั้นให้คนนั้น
+ * กฎความปลอดภัยเดิมยังอยู่ — ไม่แตะช่องที่บันทึกผลการปฏิบัติงานไปแล้ว
+ */
+async function applyRosterToPlans(y, m){
+  const days = cycleDays(y, m);
+  const staffs = D.staffAll(true);
+
+  // โหลดตารางงานของทุกพื้นที่ในทั้งสองเดือนของรอบ
+  for(const c of cycleMonths(y, m)) await loadMonthPlans(c.y, c.m);
+
+  const touched = {};            // planKey -> true
+  let created = 0, reassigned = 0, kept = 0, offSkipped = 0;
+
+  days.forEach(dd=>{
+    // พื้นที่ไหนมีใครรับผิดชอบในวันนั้นบ้าง (คนแรกที่เจอเป็นเจ้าของงาน)
+    const owner = {};
+    staffs.forEach(s=>{
+      const rec = rosterAt(dd, s.id);
+      if(rec.off){ offSkipped++; return; }
+      if(!rec.ar) return;
+      if(!owner[rec.ar]) owner[rec.ar] = { staffId: s.id, sh: rec.sh || '' };
+    });
+
+    Object.keys(owner).forEach(areaId=>{
+      const plan = state.plans[planKey(dd.y, dd.m, areaId)];
+      if(!plan) return;
+      const who = owner[areaId];
+
+      D.taskDefs(areaId, true).forEach(td=>{
+        if(!taskAppliesOn(td, dd.y, dd.m, dd.d)) return;
+        periodsOf(td).forEach(pk=>{
+          const k = cellKey(td.id, dd.d, pk);
+          const c = plan.cells[k];
+          if(!c){
+            plan.cells[k] = {
+              s: who.staffId, st:'assigned', note:'ตามตารางกะ',
+              day: dd.d, p: pk, t: td.id
+            };
+            created++;
+          } else if(cellHasResult(c)){
+            kept++;
+          } else if(c.s !== who.staffId){
+            c.s = who.staffId;
+            c.st = 'assigned';
+            c.note = 'ตามตารางกะ';
+            reassigned++;
+          }
+          touched[plan.key] = true;
+        });
+      });
+    });
+  });
+
+  for(const key of Object.keys(touched)) await savePlan(key);
+  return { created, reassigned, kept, offSkipped, plans: Object.keys(touched).length };
+}

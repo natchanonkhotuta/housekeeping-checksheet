@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.4.3';
+const APP_VERSION = '1.5.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -62,12 +62,12 @@ const ROLES = {
    --------------------------------------------------------------- */
 const PERMS = {
   admin:      ['*'],
-  supervisor: ['dashboard','mywork','assign','verify','keyin','scan','dailylog','print','report',
-               'holiday','check.any','staff.view','area.view','taskdef.view'],
+  supervisor: ['dashboard','mywork','assign','verify','keyin','scan','dailylog','roster','print','report',
+               'holiday','check.any','staff.view','area.view','taskdef.view','shift.view'],
   manager:    ['dashboard','verify.approve','print','report',
-               'staff.view','area.view','taskdef.view','holiday.view'],
+               'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
   recorder:   ['dashboard','keyin','scan','dailylog','print','report',
-               'staff.view','area.view','taskdef.view','holiday.view'],
+               'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
   staff:      ['dashboard','mywork','check.self','print.self','holiday.view']
 };
 
@@ -78,6 +78,8 @@ const ROUTE_PERMS = {
   assign:    ['assign'],
   keyin:     ['keyin'],
   scan:      ['scan'],
+  roster:    ['roster'],
+  shifts:    ['shift','shift.view'],
   dailylog:  ['dailylog'],
   staffmonth:['report'],
   verify:    ['verify','verify.approve'],
@@ -452,6 +454,7 @@ const state = {
   data: null,     // { org, areas, staff, taskDefs, holidays, leaves, users, settings, planIndex, audit }
   plans: {},      // { 'YYYY-MM|areaId' : plan }
   dailies: {},    // { 'YYYY-MM' : บันทึกประจำวันรายบุคคล }
+  rosters: {},    // { 'YYYY-MM' : ตารางกะ }
   ui: {
     y: todayParts().y, m: todayParts().m,
     areaId:'', staffId:'', selDay:0,
@@ -550,8 +553,16 @@ function normalizeData(data){
   data.leaves    = data.leaves    || [];
   data.users     = data.users     || [];
   data.audit     = data.audit     || [];
-  data.planIndex = data.planIndex || [];
+  data.planIndex  = data.planIndex  || [];
   data.dailyIndex = data.dailyIndex || [];
+  data.rosterIndex = data.rosterIndex || [];
+  // กะการทำงาน — ค่าเริ่มต้นตามที่ใช้จริง แก้/เพิ่มได้ที่หน้าจัดการกะ
+  if(!Array.isArray(data.shifts) || !data.shifts.length){
+    data.shifts = [
+      { id:'sh_a', code:'A', name:'กะเช้า',   start:'07:00', end:'16:00', note:'' },
+      { id:'sh_b', code:'B', name:'กะปิดตึก', start:'09:30', end:'18:30', note:'ผู้ปิดตึก' }
+    ];
+  }
   return data;
 }
 
@@ -567,6 +578,10 @@ async function syncNow(silent){
   for(const k of Object.keys(state.dailies)){
     const dd = await Store.get('daily:'+k);
     if(dd) state.dailies[k] = dd;
+  }
+  for(const k of Object.keys(state.rosters)){
+    const rr = await Store.get('shift:'+k);
+    if(rr) state.rosters[k] = rr;
   }
   if(!silent){
     if(Store.online) toast('ซิงก์ข้อมูลล่าสุดแล้ว','ok');

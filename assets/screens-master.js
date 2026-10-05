@@ -915,12 +915,15 @@ SCREENS.settings = async function(v){
       if(!Store.isShared()){ toast('ต้องตั้งค่าโหมดคลาวด์ก่อน','err'); return; }
       const plans   = await collectAllPlans();
       const dailies = await collectAllDailies();
+      const rosters = await collectAllRosters();
       await Store.set(DATA_KEY, state.data);
       let n = 0;
       for(const k in plans){ await Store.set('plan:'+k, plans[k]); n++; }
       let nd = 0;
       for(const k in dailies){ await Store.set('daily:'+k, dailies[k]); nd++; }
-      toast('ส่งข้อมูลขึ้นส่วนกลางแล้ว ('+n+' ตาราง · '+nd+' บันทึกประจำวัน)','ok');
+      let nr = 0;
+      for(const k in rosters){ await Store.set('shift:'+k, rosters[k]); nr++; }
+      toast('ส่งข้อมูลขึ้นส่วนกลางแล้ว ('+n+' ตาราง · '+nd+' บันทึกประจำวัน · '+nr+' ตารางกะ)','ok');
     }, 'ส่งขึ้น', 'danger');
 
   $('#saveSet').onclick = async ()=>{
