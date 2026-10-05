@@ -296,6 +296,26 @@ SCREENS.taskdefs = async function(v){
                 + '<button class="btn primary" id="addTask">+ เพิ่มงาน</button>' : '')
     + '</div>'
     + '<div class="toolbar">'+areaPicker('tdArea')+'</div>'
+    + (function(){
+        const noOwner = defs.filter(t=> t.active && !t.defaultStaffId);
+        if(!noOwner.length) return '';
+        const owners = D.staffOfArea(areaId);
+        return '<div class="card" style="border-color:var(--warn);background:var(--warn-soft)">'
+          + '<b>⚠️ งาน '+noOwner.length+' รายการยังไม่ได้กำหนดผู้รับผิดชอบ</b>'
+          + '<div class="hint" style="margin-top:.3rem">'
+          + (owners.length
+            ? 'ระบบจะใช้ผู้รับผิดชอบของพื้นที่นี้ให้อัตโนมัติตอนสร้างตาราง ('
+              + owners.map(s=>esc(s.name)).join(', ')+') '
+              + 'แต่ถ้าอยากให้แน่นอน กำหนดไว้ตรงนี้เลยจะดีกว่า'
+            : '<span style="color:var(--danger)">พื้นที่นี้ยังไม่มีแม่บ้านรับผิดชอบด้วย — '
+              + 'ตารางที่สร้างจะไม่มีชื่อคน และจะไม่ขึ้นในรายงานรายบุคคล</span>')
+          + '</div>'
+          + (editable && owners.length
+            ? '<div class="row" style="margin-top:.5rem"><button class="btn" id="tdFillOwner">'
+              + 'กำหนดผู้รับผิดชอบตามพื้นที่ให้ทั้ง '+noOwner.length+' รายการ</button></div>'
+            : '')
+          + '</div>';
+      })()
     + '<div class="tablewrap"><table><thead><tr>'
     +   '<th class="num">ลำดับ</th><th>รหัสงาน</th><th>ชื่องาน / รายละเอียด</th><th>ความถี่</th>'
     +   '<th>วัน</th><th>ช่วงเวลา</th><th>ผู้รับผิดชอบ</th><th class="num">สถานะ</th>'
@@ -328,6 +348,23 @@ SCREENS.taskdefs = async function(v){
 
   $('#tdArea').onchange = e=>{ state.ui.areaId = e.target.value; renderRoute(); };
   if(!editable) return;
+
+  if($('#tdFillOwner')) $('#tdFillOwner').onclick = ()=>{
+    const owners = D.staffOfArea(areaId);
+    const main = owners.filter(s=> s.mainAreaId === areaId)[0] || owners[0];
+    confirmDialog('กำหนดผู้รับผิดชอบเป็น <b>'+esc(main.name)+'</b> '
+      + 'ให้งานที่ยังว่างทั้งหมดในพื้นที่นี้?'
+      + '<div class="hint" style="margin-top:.4rem">เปลี่ยนรายตัวทีหลังได้ '
+      + 'และตารางที่สร้างไว้แล้วจะยังไม่เปลี่ยนจนกว่าจะกด “สร้าง/อัปเดตตาราง”</div>', async ()=>{
+        let n = 0;
+        D.taskDefs(areaId, true).forEach(t=>{
+          if(!t.defaultStaffId){ t.defaultStaffId = main.id; n++; }
+        });
+        await saveMaster('กำหนดผู้รับผิดชอบตามพื้นที่ '+D.areaName(areaId)+' '+n+' รายการ');
+        renderRoute();
+        toast('กำหนดผู้รับผิดชอบ '+n+' รายการแล้ว','ok');
+      }, 'กำหนด');
+  };
 
   $('#addTask').onclick  = ()=> taskDefDialog(null, areaId);
   $('#copyTasks').onclick = ()=> copyTasksDialog(areaId);

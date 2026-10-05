@@ -142,6 +142,14 @@ function generatePlan(plan, opts){
 
         let staffId = td.defaultStaffId || '';
         let note = '';
+
+        // งานที่ยังไม่ได้กำหนดผู้รับผิดชอบ ให้ใช้คนที่ดูแลพื้นที่นี้
+        // ไม่งั้นจะได้ช่องที่ไม่มีชื่อคน ซึ่งหายไปจากทุกหน้าจอที่ดูรายบุคคล
+        if(!staffId){
+          staffId = suggestSubstitute(areaId, iso, '');
+          if(staffId) note = 'ตามผู้รับผิดชอบพื้นที่';
+        }
+
         if(staffId){
           // สถานะถาวร (ลาพัก/พ้นสภาพ) มาก่อนวันหยุดรายวัน
           const inact = staffInactive(staffId);

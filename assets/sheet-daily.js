@@ -59,15 +59,25 @@ function decodeSheetCode(bits){
 function areaIndex(areaId){ return D.areasRaw().findIndex(a=> a.id === areaId); }
 function areaByIndex(i){ return D.areasRaw()[i] || null; }
 
-/** งานของพื้นที่+วันที่ ที่จะพิมพ์ลงใบรายวัน (จำกัดตามจำนวนแถวของใบ) */
-function dailyRows(plan, day){
+/** งานของพื้นที่+วันที่ ทั้งหมด (ยังไม่ตัดตามจำนวนแถวของใบ) */
+function dailyRowsAll(plan, day){
   const out = [];
   D.taskDefs(plan.areaId, true).forEach(td=>{
     const mk = plan.cells[cellKey(td.id, day, 'morning')];
     const af = plan.cells[cellKey(td.id, day, 'afternoon')];
     if(mk || af) out.push({ td, hasM: !!mk, hasA: !!af });
   });
-  return out.slice(0, GEO.table.rows);
+  return out;
+}
+
+/** งานที่จะพิมพ์ลงใบรายวัน — ใบหนึ่งรับได้ GEO.table.rows แถว */
+function dailyRows(plan, day){
+  return dailyRowsAll(plan, day).slice(0, GEO.table.rows);
+}
+
+/** จำนวนงานที่ล้นใบในวันนั้น (0 = พิมพ์ได้ครบ) */
+function dailyRowsOverflow(plan, day){
+  return Math.max(0, dailyRowsAll(plan, day).length - GEO.table.rows);
 }
 
 /** HTML ของใบเช็คงานรายวัน 1 แผ่น */

@@ -313,16 +313,32 @@ async function drawDailySheets(host){
   }
 
   const out = [];
+  const over = {};                     // พื้นที่ที่มีงานล้นใบ
   for(let cur = new Date(from); cur <= to; cur.setDate(cur.getDate()+1)){
     const yy = cur.getFullYear(), mm = cur.getMonth(), dd = cur.getDate();
     areas.forEach(a=>{
-      if(!state.plans[planKey(yy, mm, a.id)]) return;
+      const plan = state.plans[planKey(yy, mm, a.id)];
+      if(!plan) return;
+      const n = dailyRowsOverflow(plan, dd);
+      if(n > 0) over[a.id] = Math.max(over[a.id] || 0, n);
       const h = dailySheetHtml(a.id, yy, mm, dd);
       if(h) out.push(h);
     });
   }
 
-  host.innerHTML = out.length ? out.join('')
+  // เตือนเมื่องานเกินจำนวนแถวของใบ — เดิมตัดทิ้งเงียบ ๆ โดยไม่บอก
+  const warn = Object.keys(over).length
+    ? '<div class="card noprint" style="border-color:var(--danger);background:var(--danger-soft)">'
+      + '<b>⚠️ งานเกินจำนวนแถวของใบเช็คงานรายวัน</b>'
+      + '<div style="margin-top:.3rem">'
+      + Object.keys(over).map(id=> esc(D.areaName(id))+' เกิน '+over[id]+' รายการ').join(' · ')
+      + '</div><div class="hint" style="margin-top:.3rem">ใบรายวันพิมพ์ได้สูงสุด '
+      + GEO.table.rows+' รายการต่อแผ่น (ขนาดช่องถูกกำหนดตายตัวเพื่อให้สแกนอ่านได้) '
+      + 'รายการที่เกินจะไม่ถูกพิมพ์ — แนะนำให้แยกพื้นที่ย่อย หรือใช้ '
+      + '“CHECK SHEET ฟอร์มเปล่า” ที่รองรับรายการได้ไม่จำกัด</div></div>'
+    : '';
+
+  host.innerHTML = out.length ? warn + out.join('')
     : '<div class="card"><div class="empty">ไม่มีงานในช่วงวันที่ที่เลือก<br>'
       + '<span class="hint">ตรวจว่าได้สร้างตารางงานของเดือนนั้นแล้ว</span></div></div>';
 }
