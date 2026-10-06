@@ -48,6 +48,9 @@
     }
   }
 
+  // เวอร์ชัน 1.6: ตั้งค่าเริ่มต้นของสีเน้นพื้นที่ในตารางกะ
+  if(applyHighlightDefaults()) migrated = true;
+
   if(migrated) await Store.set(DATA_KEY, state.data);
 
   /* ---- เข้าสู่ระบบ ---- */

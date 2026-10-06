@@ -376,3 +376,33 @@ table.rs td.sh-B{background:var(--info-soft);color:var(--info)}
 table.rs th.sum,table.rs td.sum{min-width:54px;background:var(--surface-2)}
 table.rs td.sum .hint{font-size:.7rem}
 .rs-pick{margin-right:.2rem}
+
+/* ---------- สีเน้นพื้นที่ในตารางกะ ----------
+   ใช้เฉพาะกะที่ตั้งค่าให้แสดงสี และเฉพาะพื้นที่ที่เลือกสีไว้ */
+.hl-red{background:#fcebeb;color:#a32d2d;font-weight:700}
+.hl-amber{background:#faeeda;color:#854f0b;font-weight:700}
+.hl-green{background:#eaf3de;color:#3b6d11;font-weight:700}
+.hl-blue{background:#e6f1fb;color:#0c447c;font-weight:700}
+.hl-purple{background:#eeedfe;color:#3c3489;font-weight:700}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .hl-red{background:#791f1f;color:#f7c1c1}
+  :root:not([data-theme="light"]) .hl-amber{background:#633806;color:#fac775}
+  :root:not([data-theme="light"]) .hl-green{background:#27500a;color:#c0dd97}
+  :root:not([data-theme="light"]) .hl-blue{background:#0c447c;color:#b5d4f4}
+  :root:not([data-theme="light"]) .hl-purple{background:#3c3489;color:#cecbf6}
+}
+:root[data-theme="dark"] .hl-red{background:#791f1f;color:#f7c1c1}
+:root[data-theme="dark"] .hl-amber{background:#633806;color:#fac775}
+:root[data-theme="dark"] .hl-green{background:#27500a;color:#c0dd97}
+:root[data-theme="dark"] .hl-blue{background:#0c447c;color:#b5d4f4}
+:root[data-theme="dark"] .hl-purple{background:#3c3489;color:#cecbf6}
+
+/* ช่องตารางกะที่มีหลายตึก */
+table.rs td.c{line-height:1.15;padding:.15rem .1rem}
+table.rs td.c .sh{display:block;font-size:.7rem;color:var(--muted);font-weight:600}
+table.rs td.c .ars{display:block;font-size:.8rem;font-weight:700;letter-spacing:.02em}
+table.rs td.c .ars span{display:inline-block;padding:0 .08rem;border-radius:3px}
+table.rs td.c.has{background:var(--ok-soft)}
+.rs-area-on{outline:2px solid var(--brand);outline-offset:-2px;font-weight:700}
+.swatch{display:inline-block;width:1rem;height:1rem;border-radius:4px;
+  border:1px solid var(--border-strong);vertical-align:-.15rem;margin-right:.25rem}

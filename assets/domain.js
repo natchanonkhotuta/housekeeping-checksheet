@@ -410,6 +410,57 @@ function areaShort(areaId){
   return areaShortMap()[areaId] || '?';
 }
 
+/* ---------- สีเน้นพื้นที่ในตารางกะ ----------
+   ตึกส่วนใหญ่ไม่ต้องมีสี เน้นเฉพาะตึกที่ต้องสังเกต
+   และแสดงสีเฉพาะกะที่ตั้งค่าไว้ว่าให้แสดงสี                      */
+const HL_COLORS = {
+  '':       { label:'ไม่เน้น',  bg:'',        fg:'' },
+  'red':    { label:'แดง',      bg:'#fcebeb', fg:'#a32d2d' },
+  'amber':  { label:'ส้ม',      bg:'#faeeda', fg:'#854f0b' },
+  'green':  { label:'เขียว',    bg:'#eaf3de', fg:'#3b6d11' },
+  'blue':   { label:'น้ำเงิน',  bg:'#e6f1fb', fg:'#0c447c' },
+  'purple': { label:'ม่วง',     bg:'#eeedfe', fg:'#3c3489' }
+};
+
+/** สีเน้นของพื้นที่ ('' = ไม่เน้น) */
+function areaHighlight(areaId){
+  const a = D.area(areaId);
+  const hl = a && a.hl ? String(a.hl) : '';
+  return HL_COLORS[hl] ? hl : '';
+}
+/** กะนี้ให้แสดงสีเน้นหรือไม่ */
+function shiftShowsColor(shiftId){
+  const s = shiftById(shiftId);
+  return !!(s && s.hl);
+}
+/** สีของช่องตารางกะหนึ่งพื้นที่ — คืน '' เมื่อไม่ต้องเน้น */
+function rosterCellColor(shiftId, areaId){
+  if(!shiftShowsColor(shiftId)) return '';
+  return areaHighlight(areaId);
+}
+
+/**
+ * ตั้งค่าเริ่มต้นของสีเน้นให้ครั้งเดียว — เน้นสีแดงที่ตึกเลข 7
+ * และแสดงสีเฉพาะกะที่เข้างานสายที่สุด (กะปิดตึก)
+ * ต้องเรียกหลัง state.data พร้อมแล้ว เพราะใช้ areaShort()
+ * @returns {boolean} true เมื่อมีการเปลี่ยนแปลงและต้องบันทึก
+ */
+function applyHighlightDefaults(){
+  if(!state.data || state.data.hlInit) return false;
+  state.data.hlInit = true;
+
+  const shifts = shiftList();
+  if(shifts.length && !shifts.some(s=> s.hl !== undefined && s.hl)){
+    const late = shifts.slice().sort((a,b)=>
+      String(a.start||'').localeCompare(String(b.start||''))).pop();
+    if(late) late.hl = true;
+  }
+  (state.data.areas || []).forEach(a=>{
+    if(a.hl === undefined && areaShort(a.id) === '7') a.hl = 'red';
+  });
+  return true;
+}
+
 /** พื้นที่ที่แม่บ้านคนนี้รับผิดชอบ (ใช้จำกัดตัวเลือกตอนเพิ่มงานด้วยมือ) */
 function areasOfStaff(staffId){
   const s = D.staff(staffId);
@@ -645,9 +696,10 @@ function setRosterRec(y, m, staffId, day, patch){
   const k = staffId + '|' + day;
   const rec = r.rec[k] || (r.rec[k] = { s: staffId, d: day });
   Object.assign(rec, patch);
+  delete rec.ar;                                        // ย้ายมาใช้ ars แล้ว
   rec.by = state.session ? state.session.name : '';
   rec.at = nowIso();
-  if(!rec.sh && !rec.ar && !rec.off) delete r.rec[k];   // ช่องว่างไม่ต้องเก็บ
+  if(!rec.sh && !(rec.ars||[]).length && !rec.off) delete r.rec[k];
   return rec;
 }
 
@@ -657,11 +709,12 @@ function rosterSummary(y, m, staffId){
   const byShift = {}, byArea = {};
   cycleDays(y, m).forEach(dd=>{
     const rec = rosterAt(dd, staffId);
+    const ars = rosterAreas(rec);
     if(rec.off){ off++; return; }
-    if(!rec.sh && !rec.ar){ blank++; return; }
+    if(!rec.sh && !ars.length){ blank++; return; }
     work++;
     if(rec.sh) byShift[rec.sh] = (byShift[rec.sh] || 0) + 1;
-    if(rec.ar) byArea[rec.ar] = (byArea[rec.ar] || 0) + 1;
+    ars.forEach(id=>{ byArea[id] = (byArea[id] || 0) + 1; });
   });
   return { work, off, blank, byShift, byArea };
 }
@@ -669,6 +722,13 @@ function rosterSummary(y, m, staffId){
 /** อ่านช่องตารางกะของวันใดก็ได้ในรอบ (เลือกเดือนให้เอง) */
 function rosterAt(dd, staffId){
   return rosterRec(dd.y, dd.m, staffId, dd.d);
+}
+
+/** พื้นที่ทั้งหมดของช่องนั้น — รองรับข้อมูลเก่าที่เก็บพื้นที่เดียวในฟิลด์ ar */
+function rosterAreas(rec){
+  if(!rec) return [];
+  if(Array.isArray(rec.ars)) return rec.ars.filter(id=> D.area(id));
+  return rec.ar && D.area(rec.ar) ? [rec.ar] : [];
 }
 
 /**
@@ -692,8 +752,10 @@ async function applyRosterToPlans(y, m){
     staffs.forEach(s=>{
       const rec = rosterAt(dd, s.id);
       if(rec.off){ offSkipped++; return; }
-      if(!rec.ar) return;
-      if(!owner[rec.ar]) owner[rec.ar] = { staffId: s.id, sh: rec.sh || '' };
+      // คนหนึ่งอาจดูแลหลายตึกในวันเดียว — ลงให้ครบทุกตึก
+      rosterAreas(rec).forEach(areaId=>{
+        if(!owner[areaId]) owner[areaId] = { staffId: s.id, sh: rec.sh || '' };
+      });
     });
 
     Object.keys(owner).forEach(areaId=>{

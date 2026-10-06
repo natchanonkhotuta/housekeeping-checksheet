@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -559,10 +559,13 @@ function normalizeData(data){
   // กะการทำงาน — ค่าเริ่มต้นตามที่ใช้จริง แก้/เพิ่มได้ที่หน้าจัดการกะ
   if(!Array.isArray(data.shifts) || !data.shifts.length){
     data.shifts = [
-      { id:'sh_a', code:'A', name:'กะเช้า',   start:'07:00', end:'16:00', note:'' },
-      { id:'sh_b', code:'B', name:'กะปิดตึก', start:'09:30', end:'18:30', note:'ผู้ปิดตึก' }
+      { id:'sh_a', code:'A', name:'กะเช้า',   start:'07:00', end:'16:00', hl:false, note:'' },
+      { id:'sh_b', code:'B', name:'กะปิดตึก', start:'09:30', end:'18:30', hl:true,
+        note:'ผู้ปิดตึก — กะนี้แสดงสีเน้นพื้นที่' }
     ];
   }
+  // สีเน้นตั้งค่าเริ่มต้นที่ applyHighlightDefaults() หลัง state.data พร้อมแล้ว
+  // (ต้องใช้ areaShort() ซึ่งอ่านจาก state.data จึงทำตรงนี้ไม่ได้)
   return data;
 }
 
