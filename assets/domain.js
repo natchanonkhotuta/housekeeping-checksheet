@@ -446,19 +446,26 @@ function rosterCellColor(shiftId, areaId){
  * @returns {boolean} true เมื่อมีการเปลี่ยนแปลงและต้องบันทึก
  */
 function applyHighlightDefaults(){
-  if(!state.data || state.data.hlInit) return false;
-  state.data.hlInit = true;
+  if(!state.data) return false;
+  let changed = false;
 
-  const shifts = shiftList();
-  if(shifts.length && !shifts.some(s=> s.hl !== undefined && s.hl)){
-    const late = shifts.slice().sort((a,b)=>
-      String(a.start||'').localeCompare(String(b.start||''))).pop();
-    if(late) late.hl = true;
+  if(!state.data.hlInit){
+    state.data.hlInit = true;
+    changed = true;
+    (state.data.areas || []).forEach(a=>{
+      if(a.hl === undefined && areaShort(a.id) === '7') a.hl = 'red';
+    });
   }
-  (state.data.areas || []).forEach(a=>{
-    if(a.hl === undefined && areaShort(a.id) === '7') a.hl = 'red';
-  });
-  return true;
+
+  // เวอร์ชันแรกแสดงสีเฉพาะกะปิดตึก ซึ่งทำให้ตึกที่เน้นสีไม่แดงในกะอื่น
+  // เปลี่ยนเป็นแสดงทุกกะ (ปิดรายกะได้เองที่หน้ากะการทำงาน)
+  if(!state.data.hlAllShifts){
+    state.data.hlAllShifts = true;
+    changed = true;
+    shiftList().forEach(s=>{ if(!s.hl) s.hl = true; });
+  }
+
+  return changed;
 }
 
 /** พื้นที่ที่แม่บ้านคนนี้รับผิดชอบ (ใช้จำกัดตัวเลือกตอนเพิ่มงานด้วยมือ) */
@@ -697,6 +704,7 @@ function setRosterRec(y, m, staffId, day, patch){
   const rec = r.rec[k] || (r.rec[k] = { s: staffId, d: day });
   Object.assign(rec, patch);
   delete rec.ar;                                        // ย้ายมาใช้ ars แล้ว
+  if(Array.isArray(rec.ars)) rec.ars.sort(compareAreaShort);   // เรียงเลขตึกให้คงที่เสมอ
   rec.by = state.session ? state.session.name : '';
   rec.at = nowIso();
   if(!rec.sh && !(rec.ars||[]).length && !rec.off) delete r.rec[k];
