@@ -433,6 +433,12 @@ function shiftShowsColor(shiftId){
   const s = shiftById(shiftId);
   return !!(s && s.hl);
 }
+/** สีประจำกะ ('' = ไม่เน้น) — ใช้ระบายตัวอักษรรหัสกะในตาราง */
+function shiftColor(shiftId){
+  const s = shiftById(shiftId);
+  const c = s && s.color ? String(s.color) : '';
+  return HL_COLORS[c] ? c : '';
+}
 /** สีของช่องตารางกะหนึ่งพื้นที่ — คืน '' เมื่อไม่ต้องเน้น */
 function rosterCellColor(shiftId, areaId){
   if(!shiftShowsColor(shiftId)) return '';
@@ -463,6 +469,18 @@ function applyHighlightDefaults(){
     state.data.hlAllShifts = true;
     changed = true;
     shiftList().forEach(s=>{ if(!s.hl) s.hl = true; });
+  }
+
+  // สีประจำกะ — กะปิดตึก (เข้างานสายที่สุด) ใช้สีส้มเป็นค่าเริ่มต้น
+  if(!state.data.shColorInit){
+    state.data.shColorInit = true;
+    changed = true;
+    const shifts = shiftList();
+    if(shifts.length && !shifts.some(s=> s.color)){
+      const late = shifts.slice().sort((a,b)=>
+        String(a.start||'').localeCompare(String(b.start||''))).pop();
+      if(late) late.color = 'amber';
+    }
   }
 
   return changed;

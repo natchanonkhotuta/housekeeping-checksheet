@@ -399,7 +399,7 @@ table.rs td.sum .hint{font-size:.7rem}
 
 /* ช่องตารางกะที่มีหลายตึก */
 table.rs td.c{line-height:1.15;padding:.15rem .1rem}
-table.rs td.c .sh{display:block;font-size:.7rem;color:var(--muted);font-weight:600}
+table.rs td.c .sh{display:block;font-size:.7rem;color:var(--muted);font-weight:600;border-radius:3px}
 table.rs td.c .ars{display:block;font-size:.8rem;font-weight:700;letter-spacing:.02em}
 table.rs td.c .ars span{display:inline-block;padding:0 .08rem;border-radius:3px}
 table.rs td.c.has{background:var(--ok-soft)}

@@ -64,7 +64,8 @@ SCREENS.roster = async function(v){
         + '<div class="row" style="align-items:center">'
         +   '<span class="hint" style="min-width:74px">1. กะ</span>'
         +   shifts.map(s=> toolBtn('shift', s.id, esc(s.code)+' · '+esc(s.name)
-              + ' <span class="hint">'+esc(s.start)+'–'+esc(s.end)+'</span>')).join(' ')
+              + ' <span class="hint">'+esc(s.start)+'–'+esc(s.end)+'</span>',
+              shiftColor(s.id) ? 'hl-'+shiftColor(s.id) : '')).join(' ')
         +   toolBtn('off','','ห · วันหยุด')
         +   toolBtn('clear','','ล้างช่อง')
         + '</div>'
@@ -96,8 +97,11 @@ SCREENS.roster = async function(v){
       : '<div class="card"><div class="empty">ยังไม่มีข้อมูลแม่บ้าน</div></div>')
 
     + '<div class="card" style="margin-top:.6rem;padding:.6rem .9rem"><div class="hint">'
-    +   '<b>กะ</b> — '+shifts.map(s=>'<span class="pill">'+esc(s.code)+' = '+esc(s.name)
-        + ' '+esc(s.start)+'–'+esc(s.end)+(s.hl?' · แสดงสีเน้น':'')+'</span>').join(' ')
+    +   '<b>กะ</b> — '+shifts.map(s=>{
+          const c = shiftColor(s.id);
+          return '<span class="pill'+(c?' hl-'+c:'')+'">'+esc(s.code)+' = '+esc(s.name)
+            + ' '+esc(s.start)+'–'+esc(s.end)+'</span>';
+        }).join(' ')
     +   '<br><b>พื้นที่</b> — '+areas.map(a=>{
           const hl = areaHighlight(a.id);
           return '<span class="pill'+(hl?' hl-'+hl:'')+'">'+esc(areaShort(a.id))+' = '
@@ -236,8 +240,9 @@ function rosterRowHtml(s, days, y, m, editable){
       cls = 'off'; inner = 'ห'; title += ' · วันหยุด';
     } else if(rec.sh || ars.length){
       const sh = shiftById(rec.sh);
+      const shc = shiftColor(rec.sh);
       cls = 'has';
-      inner = '<span class="sh">'+esc(sh ? sh.code : '?')+'</span>'
+      inner = '<span class="sh'+(shc ? ' hl-'+shc : '')+'">'+esc(sh ? sh.code : '?')+'</span>'
         + '<span class="ars">'
         + ars.map(id=>{
             const hl = rosterCellColor(rec.sh, id);
@@ -320,7 +325,8 @@ function printRoster(y, m){
       if(rec.off){ cls = 'off'; inner = 'ห'; }
       else if(rec.sh || ars.length){
         const sh = shiftById(rec.sh);
-        inner = '<span class="sh">'+esc(sh ? sh.code : '?')+'</span>'
+        inner = '<span class="sh"'+hlStyle(shiftColor(rec.sh))+'>'
+            + esc(sh ? sh.code : '?')+'</span>'
           + ars.map(id=>'<i'+hlStyle(rosterCellColor(rec.sh, id))+'>'
               + esc(areaShort(id))+'</i>').join('');
       }
@@ -389,7 +395,8 @@ SCREENS.shifts = async function(v){
     +   (editable ? '<th class="num">จัดการ</th>' : '')
     + '</tr></thead><tbody>'
     + (list.length ? list.map(s=>
-        '<tr><td class="num"><b style="font-size:1.1rem">'+esc(s.code)+'</b></td>'
+        '<tr><td class="num"><b class="'+(shiftColor(s.id)?'hl-'+shiftColor(s.id):'')
+        + '" style="font-size:1.1rem;padding:0 .35rem;border-radius:4px">'+esc(s.code)+'</b></td>'
         + '<td><b>'+esc(s.name)+'</b></td>'
         + '<td>'+esc(s.start)+' – '+esc(s.end)+'</td>'
         + '<td class="num">'+(s.hl
@@ -446,6 +453,11 @@ function shiftDialog(sh){
       +   '<input type="time" id="fStart" value="'+esc(s.start)+'"></div>'
       + '<div class="field"><label>เวลาออกงาน</label>'
       +   '<input type="time" id="fEnd" value="'+esc(s.end)+'"></div></div>'
+      + '<div class="field"><label>สีประจำกะ (ระบายตัวอักษรรหัสกะในตาราง)</label>'
+      +   '<select id="fColor">'
+      +   Object.keys(HL_COLORS).map(k=>'<option value="'+k+'"'
+          + ((s.color||'')===k?' selected':'')+'>'+esc(HL_COLORS[k].label)+'</option>').join('')
+      +   '</select></div>'
       + '<label class="chk'+(s.hl?' on':'')+'" style="display:flex;margin-bottom:.6rem">'
       +   '<input type="checkbox" id="fHl"'+(s.hl?' checked':'')+'> '
       +   'แสดงสีเน้นพื้นที่ในกะนี้</label>'
@@ -459,7 +471,8 @@ function shiftDialog(sh){
             toast('รหัสกะซ้ำ','err'); return;
           }
           Object.assign(s, { code, name, start:$('#fStart').value, end:$('#fEnd').value,
-                             hl:$('#fHl').checked, note:$('#fNote').value.trim() });
+                             color:$('#fColor').value, hl:$('#fHl').checked,
+                             note:$('#fNote').value.trim() });
           if(isNew) state.data.shifts.push(s);
           await saveMaster((isNew?'เพิ่ม':'แก้ไข')+'กะ '+name);
           closeModal(); renderRoute(); toast('บันทึกแล้ว','ok');
