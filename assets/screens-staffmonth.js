@@ -6,23 +6,24 @@
 'use strict';
 
 SCREENS.staffmonth = async function(v){
-  const y = state.ui.y, m = state.ui.m;
-  await loadMonthAll(y, m);
+  const c = ensureCycle();
+  const y = c.y, m = c.m;
+  await loadCycleAll(y, m);
 
-  const idx = monthWorkIndex(y, m);
+  const idx = cycleWorkIndex(y, m);
   const pick = state.ui.smStaff || '';
   const staffs = (pick ? [D.staff(pick)].filter(Boolean) : D.staffAll(false))
-    .map(s=>({ s, mx: staffMonthMatrix(y, m, s.id, idx) }));
+    .map(s=>({ s, mx: staffCycleMatrix(y, m, s.id, idx) }));
   const shown = staffs.filter(x=> x.mx.rows.length || x.mx.comments);
 
   const totalMarks = shown.reduce((a,x)=> a + x.mx.marks, 0);
 
   v.innerHTML =
-    '<div class="page-head"><h1>📊 สรุปรายเดือนรายบุคคล</h1><span class="sp"></span>'
+    '<div class="page-head"><h1>📊 สรุปรายรอบรายบุคคล</h1><span class="sp"></span>'
     + '<button class="btn" id="smPrint">🖨️ พิมพ์</button>'
     + '<button class="btn" id="smXlsx">⬇ ส่งออก Excel</button></div>'
 
-    + '<div class="toolbar">'+monthPicker('sm')
+    + '<div class="toolbar">'+cyclePicker('sm')
     +   '<div class="field" style="min-width:180px"><label>แม่บ้าน</label><select id="smStaff">'
     +     selOptions(D.staffAll(false),'id','name', pick, '— ทุกคน —')+'</select></div>'
     +   (canRoute('dailylog')
@@ -31,7 +32,7 @@ SCREENS.staffmonth = async function(v){
     + '</div>'
 
     + '<div class="card" style="padding:.7rem .9rem"><div class="hint">'
-    +   '<b>'+TH_MONTHS[m]+' '+beYear(y)+'</b> · แสดง '+shown.length+' คน · '
+    +   '<b>รอบ '+esc(cycleLabel(y, m))+'</b> · แสดง '+shown.length+' คน · '
     +   'รวมงานที่ทำจริง '+totalMarks+' จุด-วัน<br>'
     +   'ตารางนี้รวมงานจากทุกพื้นที่ที่แต่ละคนไปทำจริง ไม่ยึดตามพื้นที่ที่วางแผนไว้ '
     +   'จึงไม่ตกหล่นเมื่อมีการสลับพื้นที่<br>'
@@ -45,23 +46,28 @@ SCREENS.staffmonth = async function(v){
           + '<span class="hint">บันทึกผลที่หน้า “บันทึกผลจากกระดาษ” “สแกนใบเช็คงาน” '
           + 'หรือ “บันทึกประจำวัน” ก่อน</span></div></div>');
 
-  bindMonthPicker('sm', renderRoute);
+  bindCyclePicker('sm', renderRoute);
   $('#smStaff').onchange = e=>{ state.ui.smStaff = e.target.value; renderRoute(); };
   if($('#smEdit')) $('#smEdit').onclick = ()=> go('dailylog');
   $('#smPrint').onclick = ()=> printStaffMonth(shown, y, m);
   $('#smXlsx').onclick  = ()=> exportStaffMonthExcel(shown, y, m);
 };
 
-/** เชิงอรรถคอมเมนต์ของเดือนนั้น */
+/** เชิงอรรถคอมเมนต์ของรอบนั้น */
 function smxNotes(mx){
   const notes = [];
-  for(let d = 1; d <= mx.dim; d++){
-    const c = mx.byDay[d];
-    if(c && c.cm) notes.push({ n: notes.length + 1, d, cm: c.cm });
-  }
+  mx.days.forEach(dd=>{
+    const c = mx.byDay[dd.d];
+    if(c && c.cm) notes.push({ n: notes.length + 1, d: dd.d, dd, cm: c.cm });
+  });
   const no = {};
   notes.forEach(n=>{ no[n.d] = n.n; });
   return { notes, no };
+}
+/** คลาสสีของหัวคอลัมน์วันหนึ่งในรอบ */
+function smxDayCls(dd){
+  if(holidayOn(dd.iso)) return 'hol';
+  return dowOf(dd.y, dd.m, dd.d) === 0 ? 'sun' : '';
 }
 
 /** สรุปจำนวนวันแยกตามตึก เรียงจากมากไปน้อย */
@@ -73,45 +79,38 @@ function smxAreaPills(mx){
 
 /** ตารางของแม่บ้าน 1 คน (สำหรับแสดงบนจอ) */
 function staffMatrixHtml(s, mx, y, m){
-  const dim = mx.dim;
   const nt = smxNotes(mx);
-  const dayCls = d=> holidayOn(ymd(y,m,d)) ? 'hol' : (dowOf(y,m,d) === 0 ? 'sun' : '');
 
-  let head = '';
-  for(let d = 1; d <= dim; d++)
-    head += '<th class="d '+dayCls(d)+'">'+d
-          + '<span class="dw">'+TH_DOW_SHORT[dowOf(y,m,d)]+'</span></th>';
+  const head = mx.days.map(dd=>
+    '<th class="d '+smxDayCls(dd)+'" title="'+esc(thDateLong(dd.iso))+'">'+dd.d
+    + '<span class="dw">'+TH_DOW_SHORT[dowOf(dd.y, dd.m, dd.d)]+'</span></th>').join('');
 
   // แถว "ตึกที่ทำ" — อยู่บนสุดของตาราง
-  let bldTds = '';
-  for(let d = 1; d <= dim; d++){
-    const cell = mx.byDay[d];
+  const bldTds = mx.days.map(dd=>{
+    const cell = mx.byDay[dd.d];
     const codes = cell.areas.map(areaShort).join(',');
-    bldTds += '<td class="d '+dayCls(d)+'" title="'
-      + esc(cell.areas.map(D.areaName).join(', '))+'">'
-      + (codes || '—')+'</td>';
-  }
+    return '<td class="d '+smxDayCls(dd)+'" title="'
+      + esc(cell.areas.map(D.areaName).join(', '))+'">'+(codes || '—')+'</td>';
+  }).join('');
 
   const body = mx.rows.map(r=>{
-    let tds = '';
-    for(let d = 1; d <= dim; d++){
-      const cell = mx.byDay[d];
+    const tds = mx.days.map(dd=>{
+      const cell = mx.byDay[dd.d];
       const mk = cell.marks[r.key];
       const off = (cell.status.st === 'off' && !mk);
-      const cls = mk === 'done' ? 'ok' : mk === 'failed' ? 'bad' : (off ? 'off' : dayCls(d));
-      tds += '<td class="d '+cls+'">'
+      const cls = mk === 'done' ? 'ok' : mk === 'failed' ? 'bad' : (off ? 'off' : smxDayCls(dd));
+      return '<td class="d '+cls+'">'
         + (mk === 'done' ? '✓' : mk === 'failed' ? '✗' : '')+'</td>';
-    }
+    }).join('');
     return '<tr><td class="tk"><b>'+esc(r.name)+'</b></td>'+tds+'</tr>';
   }).join('');
 
-  let cmTds = '';
-  for(let d = 1; d <= dim; d++){
-    const cell = mx.byDay[d];
+  const cmTds = mx.days.map(dd=>{
+    const cell = mx.byDay[dd.d];
     const off = (cell.status.st === 'off');
-    cmTds += '<td class="d '+(off ? 'off' : dayCls(d))+'">'
-      + (nt.no[d] ? nt.no[d] : (off ? 'ห' : ''))+'</td>';
-  }
+    return '<td class="d '+(off ? 'off' : smxDayCls(dd))+'">'
+      + (nt.no[dd.d] ? nt.no[dd.d] : (off ? 'ห' : ''))+'</td>';
+  }).join('');
 
   const g = mx.goal;
   // ถ้ายังคีย์ข้อมูลไม่ครบทุกวัน เปอร์เซ็นต์จะต่ำเพราะข้อมูลขาด ไม่ใช่เพราะทำงานไม่ได้
@@ -196,45 +195,39 @@ function printStaffMonth(list, y, m){
   const html = list.map(x=>{
     const s = x.s, mx = x.mx, dim = mx.dim;
     const nt = smxNotes(mx);
-    const dayCls = d=> holidayOn(ymd(y,m,d)) ? 'hol' : (dowOf(y,m,d) === 0 ? 'sun' : '');
 
-    let head = '';
-    for(let d = 1; d <= dim; d++) head += '<th class="'+dayCls(d)+'">'+d+'</th>';
-    let dowRow = '';
-    for(let d = 1; d <= dim; d++)
-      dowRow += '<th class="'+dayCls(d)+'">'+TH_DOW_SHORT[dowOf(y,m,d)]+'</th>';
+    const head   = mx.days.map(dd=>'<th class="'+smxDayCls(dd)+'">'+dd.d+'</th>').join('');
+    const dowRow = mx.days.map(dd=>'<th class="'+smxDayCls(dd)+'">'
+      + TH_DOW_SHORT[dowOf(dd.y, dd.m, dd.d)]+'</th>').join('');
 
-    let bldTds = '';
-    for(let d = 1; d <= dim; d++){
-      const codes = mx.byDay[d].areas.map(areaShort).join(',');
-      bldTds += '<td class="'+dayCls(d)+'">'+(codes || '—')+'</td>';
-    }
+    const bldTds = mx.days.map(dd=>{
+      const codes = mx.byDay[dd.d].areas.map(areaShort).join(',');
+      return '<td class="'+smxDayCls(dd)+'">'+(codes || '—')+'</td>';
+    }).join('');
 
     const body = mx.rows.map(r=>{
-      let tds = '';
-      for(let d = 1; d <= dim; d++){
-        const cell = mx.byDay[d];
+      const tds = mx.days.map(dd=>{
+        const cell = mx.byDay[dd.d];
         const mk = cell.marks[r.key];
         const off = (cell.status.st === 'off' && !mk);
-        tds += '<td class="mk '+(off ? 'off' : dayCls(d))+'">'
+        return '<td class="mk '+(off ? 'off' : smxDayCls(dd))+'">'
           + (mk === 'done' ? '✓' : mk === 'failed' ? '✗' : '')+'</td>';
-      }
+      }).join('');
       return '<tr><td class="tk">'+esc(r.name)+'</td>'+tds+'</tr>';
     }).join('');
 
-    let cmTds = '';
-    for(let d = 1; d <= dim; d++){
-      const cell = mx.byDay[d];
+    const cmTds = mx.days.map(dd=>{
+      const cell = mx.byDay[dd.d];
       const off = (cell.status.st === 'off');
-      cmTds += '<td class="'+(off ? 'off' : dayCls(d))+'">'
-        + (nt.no[d] ? nt.no[d] : (off ? 'ห' : ''))+'</td>';
-    }
+      return '<td class="'+(off ? 'off' : smxDayCls(dd))+'">'
+        + (nt.no[dd.d] ? nt.no[dd.d] : (off ? 'ห' : ''))+'</td>';
+    }).join('');
 
     const g = mx.goal;
     const colW = (77 / dim).toFixed(3);
     return '<div class="sm">'
       + '<div class="hd"><span><b>'+esc(org.name)+'</b><br>'+esc(org.dept)+'</span>'
-      +   '<h1>สรุปการปฏิบัติงานรายบุคคล<span>ประจำเดือน '+TH_MONTHS[m]+' พ.ศ. '+beYear(y)+'</span></h1>'
+      +   '<h1>สรุปการปฏิบัติงานรายบุคคล<span>รอบ '+esc(cycleLabel(y, m))+'</span></h1>'
       +   '<span style="text-align:right">'+esc(org.doc)+'-S<br>แก้ไขครั้งที่ '+esc(org.rev)+'</span></div>'
       + '<div class="info"><span><b>ผู้ปฏิบัติงาน:</b> '+esc(s.name)+'</span>'
       +   '<span><b>รหัส:</b> '+esc(s.empCode)+'</span>'
@@ -265,7 +258,7 @@ function printStaffMonth(list, y, m){
   }).join('');
 
   printDocument({
-    title: 'สรุปรายบุคคล_'+TH_MONTHS[m]+'_'+beYear(y),
+    title: 'สรุปรายบุคคล_รอบ_'+cycleLabelShort(y, m),
     html, css: SMX_PRINT_CSS, orientation:'landscape', margin:'8mm'
   });
 }
@@ -284,7 +277,7 @@ function exportStaffMonthExcel(list, y, m){
     const s = x.s, mx = x.mx, dim = mx.dim;
     const aoa = [];
     aoa.push([org.name, '', 'สรุปการปฏิบัติงานรายบุคคล']);
-    aoa.push(['ประจำเดือน', TH_MONTHS[m], 'พ.ศ.', beYear(y)]);
+    aoa.push(['รอบการทำงาน', cycleLabel(y, m)]);
     aoa.push(['ผู้ปฏิบัติงาน', s.name, 'รหัส', s.empCode,
               'พื้นที่หลัก', D.areaName(s.mainAreaId)]);
     aoa.push(['ทำงาน', mx.workDays+' วัน', 'ผลงานเทียบเป้า',
@@ -294,30 +287,27 @@ function exportStaffMonthExcel(list, y, m){
     aoa.push([]);
 
     const h1 = ['รายการงาน'], h2 = [''];
-    for(let d = 1; d <= dim; d++){ h1.push(d); h2.push(TH_DOW_SHORT[dowOf(y,m,d)]); }
+    mx.days.forEach(dd=>{ h1.push(dd.d); h2.push(TH_DOW_SHORT[dowOf(dd.y, dd.m, dd.d)]); });
     aoa.push(h1); aoa.push(h2);
 
     const bldRow = ['ตึกที่ทำ'];
-    for(let d = 1; d <= dim; d++){
-      const codes = mx.byDay[d].areas.map(areaShort).join(',');
-      bldRow.push(codes || '');
-    }
+    mx.days.forEach(dd=> bldRow.push(mx.byDay[dd.d].areas.map(areaShort).join(',') || ''));
     aoa.push(bldRow);
 
     mx.rows.forEach(r=>{
       const row = [r.name];
-      for(let d = 1; d <= dim; d++){
-        const mk = mx.byDay[d].marks[r.key];
+      mx.days.forEach(dd=>{
+        const mk = mx.byDay[dd.d].marks[r.key];
         row.push(mk === 'done' ? '✓' : mk === 'failed' ? '✗' : '');
-      }
+      });
       aoa.push(row);
     });
 
     const cmRow = ['คอมเมนต์ประจำวัน'];
-    for(let d = 1; d <= dim; d++){
-      const cell = mx.byDay[d];
+    mx.days.forEach(dd=>{
+      const cell = mx.byDay[dd.d];
       cmRow.push(cell.cm ? cell.cm : (cell.status.st === 'off' ? 'ห' : ''));
-    }
+    });
     aoa.push(cmRow);
 
     aoa.push([]);
@@ -335,7 +325,7 @@ function exportStaffMonthExcel(list, y, m){
     XLSX.utils.book_append_sheet(wb, ws, name);
   });
 
-  const fn = 'สรุปรายบุคคล_'+TH_MONTHS[m]+'_'+beYear(y)+'.xlsx';
+  const fn = 'สรุปรายบุคคล_รอบ_'+cycleLabelShort(y, m)+'.xlsx';
   if(!hasXLSX){ csvFallback(firstAoA, fn); return; }
   const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
   download(fn, new Blob([out],

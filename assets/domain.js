@@ -109,7 +109,8 @@ function taskAppliesOn(td, y, m, d){
 /**
  * สร้าง/อัปเดตตารางงานรายเดือนจากรายการงานมาตรฐาน
  * @param {object} plan  แผนของพื้นที่นั้นในเดือนนั้น
- * @param {object} opts  { overwrite:boolean, assignOnHoliday:boolean }
+ * @param {object} opts  { overwrite, assignOnHoliday, fromDay, minDay, maxDay }
+ *   minDay/maxDay ใช้จำกัดช่วงวัน เช่น สร้างเฉพาะวันที่อยู่ในรอบ 21–20
  */
 function generatePlan(plan, opts){
   opts = opts || {};
@@ -120,7 +121,9 @@ function generatePlan(plan, opts){
     ? opts.assignOnHoliday : state.data.settings.assignOnHoliday;
 
   let created = 0, skipped = 0;
-  for(let d=1; d<=dim; d++){
+  const dFrom = Math.max(1, opts.minDay || 1);
+  const dTo   = Math.min(dim, opts.maxDay || dim);
+  for(let d=dFrom; d<=dTo; d++){
     const iso = ymd(y, m, d);
     const dow = dowOf(y, m, d);
     const hd  = holidayOn(iso);
@@ -707,6 +710,18 @@ async function loadCycleRosters(y, m){
   for(const c of cycleMonths(y, m)) await loadRoster(c.y, c.m);
 }
 
+/* ---------- ภารกิจพิเศษ (ลงในตารางกะเหมือนวันหยุด ไม่ติดตามงาน) ---------- */
+function dutyList(){ return state.data.duties || []; }
+function dutyById(id){ return dutyList().find(d=> d.id === id) || null; }
+function dutyColor(id){
+  const d = dutyById(id);
+  return (d && d.hl && HL_COLORS[d.hl]) ? d.hl : '';
+}
+/** ภารกิจพิเศษของช่องนั้น ถ้ามี */
+function rosterDuty(rec){
+  return (rec && rec.sp) ? dutyById(rec.sp) : null;
+}
+
 /** รายการกะของคนนั้นในวันนั้น */
 function rosterRec(y, m, staffId, day, create){
   const r = state.rosters[ymKey(y, m)];
@@ -725,24 +740,29 @@ function setRosterRec(y, m, staffId, day, patch){
   if(Array.isArray(rec.ars)) rec.ars.sort(compareAreaShort);   // เรียงเลขตึกให้คงที่เสมอ
   rec.by = state.session ? state.session.name : '';
   rec.at = nowIso();
-  if(!rec.sh && !(rec.ars||[]).length && !rec.off) delete r.rec[k];
+  if(!rec.sh && !(rec.ars||[]).length && !rec.off && !rec.sp) delete r.rec[k];
   return rec;
 }
 
 /** สรุปของคนหนึ่งในรอบ — ใช้ทั้งบนจอและตอนพิมพ์ */
 function rosterSummary(y, m, staffId){
-  let work = 0, off = 0, blank = 0;
-  const byShift = {}, byArea = {};
+  let work = 0, off = 0, blank = 0, duty = 0;
+  const byShift = {}, byArea = {}, byDuty = {};
   cycleDays(y, m).forEach(dd=>{
     const rec = rosterAt(dd, staffId);
     const ars = rosterAreas(rec);
     if(rec.off){ off++; return; }
+    if(rec.sp){                                   // ภารกิจพิเศษ — ไม่นับเป็นวันลงกะ
+      duty++;
+      byDuty[rec.sp] = (byDuty[rec.sp] || 0) + 1;
+      return;
+    }
     if(!rec.sh && !ars.length){ blank++; return; }
     work++;
     if(rec.sh) byShift[rec.sh] = (byShift[rec.sh] || 0) + 1;
     ars.forEach(id=>{ byArea[id] = (byArea[id] || 0) + 1; });
   });
-  return { work, off, blank, byShift, byArea };
+  return { work, off, blank, duty, byShift, byArea, byDuty };
 }
 
 /** อ่านช่องตารางกะของวันใดก็ได้ในรอบ (เลือกเดือนให้เอง) */
@@ -770,7 +790,7 @@ async function applyRosterToPlans(y, m){
   for(const c of cycleMonths(y, m)) await loadMonthPlans(c.y, c.m);
 
   const touched = {};            // planKey -> true
-  let created = 0, reassigned = 0, kept = 0, offSkipped = 0;
+  let created = 0, reassigned = 0, kept = 0, offSkipped = 0, dutySkipped = 0;
 
   days.forEach(dd=>{
     // พื้นที่ไหนมีใครรับผิดชอบในวันนั้นบ้าง (คนแรกที่เจอเป็นเจ้าของงาน)
@@ -778,6 +798,8 @@ async function applyRosterToPlans(y, m){
     staffs.forEach(s=>{
       const rec = rosterAt(dd, s.id);
       if(rec.off){ offSkipped++; return; }
+      // ภารกิจพิเศษ เช่น ทำงานบ้านผู้บริหาร — ไม่สร้างงานติดตามให้
+      if(rec.sp){ dutySkipped++; return; }
       // คนหนึ่งอาจดูแลหลายตึกในวันเดียว — ลงให้ครบทุกตึก
       rosterAreas(rec).forEach(areaId=>{
         if(!owner[areaId]) owner[areaId] = { staffId: s.id, sh: rec.sh || '' };
@@ -815,5 +837,221 @@ async function applyRosterToPlans(y, m){
   });
 
   for(const key of Object.keys(touched)) await savePlan(key);
-  return { created, reassigned, kept, offSkipped, plans: Object.keys(touched).length };
+  return { created, reassigned, kept, offSkipped, dutySkipped,
+           plans: Object.keys(touched).length };
+}
+
+/* =====================================================================
+   9. ตัวช่วยสำหรับหน้าจอที่ทำงานเป็น "รอบ 21–20"
+   ---------------------------------------------------------------------
+   ข้อสังเกตสำคัญ: ภายในหนึ่งรอบ เลขวันที่ไม่มีทางซ้ำกัน
+   (21–31 มาจากเดือนแรก · 1–20 มาจากเดือนถัดไป)
+   จึงยังใช้คีย์ที่อ้างด้วยเลขวันอย่างเดียวได้เหมือนเดิม
+   ===================================================================== */
+
+/** โหลดข้อมูลทุกอย่างของรอบ (ตารางงานทุกพื้นที่ + บันทึกประจำวัน + ตารางกะ) */
+async function loadCycleAll(y, m){
+  for(const c of cycleMonths(y, m)){
+    await loadMonthPlans(c.y, c.m);
+    await loadDaily(c.y, c.m);
+  }
+  await loadCycleRosters(y, m);
+}
+
+/** วันในรอบที่มีเลขวันตรงกับที่ระบุ — คืน null ถ้าไม่อยู่ในรอบ */
+function cycleDayOf(y, m, day){
+  return cycleDays(y, m).find(dd=> dd.d === day) || null;
+}
+
+/** ดัชนีงานที่ทำจริงของทั้งรอบ (รวมสองเดือน เฉพาะวันที่อยู่ในรอบ) */
+function cycleWorkIndex(y, m){
+  const out = {};
+  const inCycle = {};
+  cycleDays(y, m).forEach(dd=>{ inCycle[dd.y+'|'+dd.m+'|'+dd.d] = true; });
+  cycleMonths(y, m).forEach(c=>{
+    const idx = monthWorkIndex(c.y, c.m);
+    Object.keys(idx).forEach(k=>{
+      const day = +k.split('|')[1];
+      if(inCycle[c.y+'|'+c.m+'|'+day]) out[k] = idx[k];
+    });
+  });
+  return out;
+}
+
+/** ส่วนต่างบันทึกประจำวันของวันในรอบ */
+function dailyRecAt(dd, staffId, create){
+  return dailyRec(dd.y, dd.m, staffId, dd.d, create);
+}
+/** งานที่ทำจริงของคนนั้นในวันของรอบ */
+function dailyWorkAt(dd, staffId, idx){
+  return dailyWork(dd.y, dd.m, dd.d, staffId, idx);
+}
+/** สถานะทำงาน/หยุดของวันในรอบ */
+function dailyStatusAt(dd, staffId){
+  return dailyStatus(dd.y, dd.m, dd.d, staffId);
+}
+/** ตารางงานของพื้นที่นั้นในวันของรอบ */
+function planAt(dd, areaId){
+  return state.plans[planKey(dd.y, dd.m, areaId)] || null;
+}
+
+/**
+ * ตารางสรุปของแม่บ้าน 1 คน ตลอด "รอบ"
+ * โครงเหมือน staffMonthMatrix() ทุกอย่าง ต่างแค่ไล่วันตามรอบแทนเดือนปฏิทิน
+ */
+function staffCycleMatrix(y, m, staffId, idx){
+  idx = idx || cycleWorkIndex(y, m);
+  const days = cycleDays(y, m);
+  const rowsMap = {};
+  const byDay = {};
+  const areaDays = {};
+  let workDays = 0, marks = 0, comments = 0;
+
+  days.forEach(dd=>{
+    const w = dailyWorkAt(dd, staffId, idx);
+    const cell = { marks:{}, areas:[], cm: w.rec.cm || '', status: dailyStatusAt(dd, staffId) };
+
+    w.items.forEach(it=>{
+      const td = D.taskDef(it.taskId);
+      const key = taskRowKey(td);
+      if(!rowsMap[key])
+        rowsMap[key] = { key, name: td.name, order: (td.order || 999), taskIds: [] };
+      rowsMap[key].order = Math.min(rowsMap[key].order, td.order || 999);
+      if(!rowsMap[key].taskIds.includes(it.taskId)) rowsMap[key].taskIds.push(it.taskId);
+      if(cell.marks[key] !== 'failed') cell.marks[key] = it.st;
+      if(!cell.areas.includes(it.areaId)) cell.areas.push(it.areaId);
+      marks++;
+    });
+
+    cell.areas.sort(compareAreaShort);
+    cell.areas.forEach(a=>{ areaDays[a] = (areaDays[a] || 0) + 1; });
+    if(w.items.length) workDays++;
+    if(cell.cm) comments++;
+    byDay[dd.d] = cell;
+  });
+
+  const rows = Object.keys(rowsMap).map(k=> rowsMap[k])
+    .sort((a,b)=> (a.order - b.order) || a.name.localeCompare(b.name, 'th'));
+
+  return { rows, byDay, days, dim: days.length, workDays, marks, comments, areaDays,
+           goal: staffCycleGoal(y, m, staffId, idx) };
+}
+
+/** ผลงานเทียบเป้าหมายของรอบ — นับถึงวันนี้ ไม่รวมวันหยุด/วันลาของคนนั้น */
+function staffCycleGoal(y, m, staffId, idx){
+  idx = idx || cycleWorkIndex(y, m);
+  const days = cycleDays(y, m);
+  const t = todayParts();
+  const todayIso = ymd(t.y, t.m, t.d);
+
+  const planned = new Set();
+  const done = new Set();
+  let daysWithData = 0, workDaysElapsed = 0, lastDay = 0;
+
+  days.forEach(dd=>{
+    if(dd.iso > todayIso) return;                  // ยังมาไม่ถึง
+    lastDay = dd.d;
+    if(dailyStatusAt(dd, staffId).st === 'off') return;
+    workDaysElapsed++;
+
+    D.areas(false).forEach(a=>{
+      const p = planAt(dd, a.id);
+      if(!p) return;
+      for(const k in p.cells){
+        const c = p.cells[k];
+        if(c.day !== dd.d || c.s !== staffId) continue;
+        if(c.st === 'skipped' || c.st === 'leave') continue;
+        planned.add(c.t + '|' + dd.d);
+      }
+    });
+
+    const items = dailyWorkAt(dd, staffId, idx).items;
+    if(items.length) daysWithData++;
+    items.forEach(it=>{ if(it.st === 'done') done.add(it.taskId + '|' + dd.d); });
+  });
+
+  const target = planned.size, hit = done.size;
+  return {
+    target, done: hit,
+    pct: target ? Math.round(hit / target * 100) : 0,
+    lastDay, daysWithData, workDaysElapsed,
+    missingDays: Math.max(0, workDaysElapsed - daysWithData)
+  };
+}
+
+/* ---------- ชุดแผนงานรายรอบ (ใช้ในหน้ามอบหมายงาน) ---------- */
+
+/**
+ * รวมแผนงานของพื้นที่หนึ่งตลอด "รอบ 21–20" ซึ่งพาดสองเดือนปฏิทิน
+ * เก็บข้อมูลยังแยกรายเดือนเหมือนเดิม แต่หน้าจอมองเป็นรอบเดียว
+ */
+async function cyclePlanSet(y, m, areaId){
+  const days  = cycleDays(y, m);
+  const plans = [];
+  for(const c of cycleMonths(y, m)){
+    plans.push(state.plans[planKey(c.y, c.m, areaId)] || await loadPlan(c.y, c.m, areaId));
+  }
+  const byKey = {};
+  days.forEach(dd=>{ byKey[dd.y+'-'+dd.m+'-'+dd.d] = dd; });
+
+  return {
+    y, m, areaId, days, plans,
+    /** แผนของเดือนที่วันนั้นอยู่ */
+    planOf(dd){ return plans.find(p=> p.y === dd.y && p.m === dd.m) || null; },
+    /** ช่วงวันของแผนนั้นที่อยู่ในรอบนี้ */
+    rangeOf(p){
+      return (p.y === y && p.m === m)
+        ? { from: CYCLE_START_DAY, to: daysInMonth(p.y, p.m) }
+        : { from: 1, to: CYCLE_START_DAY - 1 };
+    },
+    dayOf(iso){ return days.find(dd=> dd.iso === iso) || null; },
+    inCycle(p, day){ return !!byKey[p.y+'-'+p.m+'-'+day]; },
+    /** ทุกช่องงานในรอบ — [{ dd, plan, k, c }] */
+    entries(){
+      const out = [];
+      plans.forEach(p=>{
+        for(const k in p.cells){
+          const c  = p.cells[k];
+          const dd = byKey[p.y+'-'+p.m+'-'+c.day];
+          if(dd) out.push({ dd, plan:p, k, c });
+        }
+      });
+      return out;
+    },
+    async save(msg){
+      for(const p of plans) await savePlan(p.key);
+      if(msg) await saveMaster(msg);
+    },
+    async setStatus(st, extra){
+      for(const p of plans){
+        p.status = st;
+        if(extra){ p.approvals = p.approvals || {}; p.approvals.plan = extra; }
+        await savePlan(p.key);
+      }
+    }
+  };
+}
+
+/** สถานะรวมของรอบ — อนุมัติต่อเมื่อครบทั้งสองเดือน */
+function cycleStatus(cp){
+  const st = cp.plans.map(p=> p.status || 'draft');
+  if(st.length && st.every(s=> s === 'approved')) return 'approved';
+  if(st.includes('review')) return 'review';
+  return 'draft';
+}
+
+/** สรุปจำนวนช่องงานของทั้งรอบ */
+function cycleStats(cp){
+  const o = { total:0, done:0, verified:0, doing:0, problem:0, pending:0, unassigned:0 };
+  cp.entries().forEach(e=>{
+    const c = e.c;
+    o.total++;
+    if(c.st === 'done') o.done++;
+    else if(c.st === 'verified') o.verified++;
+    else if(c.st === 'doing') o.doing++;
+    else if(ST_PROBLEM.includes(c.st)) o.problem++;
+    else if(ST_OPEN.includes(c.st)) o.pending++;
+    if(!c.s && c.st !== 'skipped') o.unassigned++;
+  });
+  return o;
 }

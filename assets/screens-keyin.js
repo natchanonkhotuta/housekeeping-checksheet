@@ -26,44 +26,54 @@ function kiStepOf(st){
 }
 
 SCREENS.keyin = async function(v){
-  const y = state.ui.y, m = state.ui.m, dim = daysInMonth(y, m);
   const t = todayParts();
-  if(!state.ui.kiDay) state.ui.kiDay = (t.y === y && t.m === m) ? t.d : 1;
-  state.ui.kiDay = clampInt(state.ui.kiDay, 1, dim);
+  // ยึดวันที่เป็นหลัก แล้วหารอบ 21–20 ที่วันนั้นอยู่
+  const wantIso = state.ui.kiIso || ymd(t.y, t.m, t.d);
+  const wd  = new Date(wantIso);
+  const cyc = cycleOfDate(wd.getFullYear(), wd.getMonth(), wd.getDate());
+  state.ui.cy = cyc.y; state.ui.cm = cyc.m;
+  const y = cyc.y, m = cyc.m;
 
   if(!D.area(state.ui.areaId)) state.ui.areaId = (D.areas(true)[0]||{}).id || '';
   const areaId = state.ui.areaId;
   if(!areaId){ v.innerHTML = '<div class="empty">กรุณาเพิ่มพื้นที่ก่อน</div>'; return; }
 
   const scope = state.ui.kiScope || 'day';
-  const day   = state.ui.kiDay;
 
-  await loadMonthPlans(y, m);
-  const plan = state.plans[planKey(y,m,areaId)] || await loadPlan(y, m, areaId);
+  await loadCycleAll(y, m);
+  const cp  = await cyclePlanSet(y, m, areaId);
+  const sel = cp.dayOf(wantIso) || cp.days[0];
+  state.ui.kiIso = sel.iso;
 
-  /* ---- คอลัมน์วันที่ที่จะแสดง ---- */
+  /* ---- คอลัมน์วันที่ที่จะแสดง (อาจคาบสองเดือนปฏิทินในสัปดาห์เดียว) ---- */
   let days;
   if(scope === 'week'){
-    const from = Math.max(1, day - dowOf(y, m, day));
-    days = [];
-    for(let d = from; d <= Math.min(dim, from + 6); d++) days.push(d);
-  } else days = [day];
+    const idx = cp.days.findIndex(d=> d.iso === sel.iso);
+    let from = idx;
+    while(from > 0 && dowOf(cp.days[from].y, cp.days[from].m, cp.days[from].d) !== 0) from--;
+    days = cp.days.slice(from, from + 7);
+  } else days = [sel];
+
+  const cellAt = (dd, tid, pk)=>{
+    const p = cp.planOf(dd);
+    return p ? (p.cells[cellKey(tid, dd.d, pk)] || null) : null;
+  };
 
   /* ---- แถวงาน: เฉพาะงานที่มีอยู่ในตารางของช่วงนี้ ---- */
   const defs = D.taskDefs(areaId, true).filter(td=>
-    days.some(d=> PERIOD_KEYS.some(pk=> plan.cells[cellKey(td.id, d, pk)])));
+    days.some(dd=> PERIOD_KEYS.some(pk=> cellAt(dd, td.id, pk))));
 
   let cTotal = 0, cFilled = 0;
-  days.forEach(d=> defs.forEach(td=> PERIOD_KEYS.forEach(pk=>{
-    const c = plan.cells[cellKey(td.id, d, pk)];
+  days.forEach(dd=> defs.forEach(td=> PERIOD_KEYS.forEach(pk=>{
+    const c = cellAt(dd, td.id, pk);
     if(!c) return;
     cTotal++;
     if(kiStepOf(c.st) !== 'clear') cFilled++;
   })));
 
   const rangeTxt = (scope === 'day')
-    ? thDateLong(ymd(y,m,day))+' ('+TH_DOW[dowOf(y,m,day)]+')'
-    : days[0]+' – '+days[days.length-1]+' '+TH_MONTHS[m]+' '+beYear(y);
+    ? thDateLong(sel.iso)+' ('+TH_DOW[dowOf(sel.y,sel.m,sel.d)]+')'
+    : thDate(days[0].iso)+' – '+thDate(days[days.length-1].iso);
 
   v.innerHTML =
     '<div class="page-head"><h1>⌨️ บันทึกผลจากกระดาษ</h1><span class="sp"></span>'
@@ -75,7 +85,8 @@ SCREENS.keyin = async function(v){
     +     '<option value="day"'+(scope==='day'?' selected':'')+'>รายวัน</option>'
     +     '<option value="week"'+(scope==='week'?' selected':'')+'>รายสัปดาห์</option></select></div>'
     +   '<div class="field" style="max-width:180px"><label>วันที่</label>'
-    +     '<input type="date" id="kiDate" value="'+ymd(y,m,day)+'"></div>'
+    +     '<input type="date" id="kiDate" value="'+sel.iso+'">'
+    +     '<span class="hint">รอบ '+cycleLabelShort(y, m)+'</span></div>'
     +   '<div class="field"><label>&nbsp;</label><div class="row">'
     +     '<button class="btn sm" id="kiPrev">◀ '+(scope==='day'?'วันก่อน':'สัปดาห์ก่อน')+'</button>'
     +     '<button class="btn sm" id="kiToday">วันนี้</button>'
@@ -104,35 +115,37 @@ SCREENS.keyin = async function(v){
     + (defs.length
       ? '<div class="tablewrap ki-wrap"><table class="kigrid"><thead>'
         + '<tr><th class="ki-no" rowspan="2">ที่</th><th class="ki-task" rowspan="2">รายการงาน</th>'
-        + days.map(d=>{
-            const hd = holidayOn(ymd(y,m,d)), dw = dowOf(y,m,d);
-            return '<th colspan="2" class="ki-day '+(hd?'hol':dw===0?'sun':'')+'">'+d
-              + '<div class="ki-dw">'+TH_DOW_SHORT[dw]+'</div></th>';
+        + days.map(dd=>{
+            const hd = holidayOn(dd.iso), dw = dowOf(dd.y,dd.m,dd.d);
+            return '<th colspan="2" class="ki-day '+(hd?'hol':dw===0?'sun':'')+'">'+dd.d
+              + '<div class="ki-dw">'+TH_MONTHS_SHORT[dd.m]+' '+TH_DOW_SHORT[dw]+'</div></th>';
           }).join('')
         + '</tr><tr>'
-        + days.map(d=> PERIOD_KEYS.map(pk=>
-            '<th class="ki-ph" data-fillcol="'+d+'|'+pk+'" title="คลิกเพื่อติ๊กทั้งคอลัมน์">'
+        + days.map(dd=> PERIOD_KEYS.map(pk=>
+            '<th class="ki-ph" data-fillcol="'+dd.iso+'|'+pk+'" title="คลิกเพื่อติ๊กทั้งคอลัมน์">'
             + (pk === 'morning' ? 'เช้า' : 'บ่าย')+'</th>').join('')).join('')
         + '</tr></thead><tbody>'
         + defs.map((td,i)=>
             '<tr><td class="ki-no">'+(i+1)+'</td>'
             + '<td class="ki-task" data-fillrow="'+td.id+'" title="คลิกเพื่อติ๊กทั้งแถว">'
             +   '<b>'+esc(td.name)+'</b><div class="hint">'+esc(td.code)+'</div></td>'
-            + days.map(d=> PERIOD_KEYS.map(pk=>{
-                const k = cellKey(td.id, d, pk);
-                const c = plan.cells[k];
+            + days.map(dd=> PERIOD_KEYS.map(pk=>{
+                const k = cellKey(td.id, dd.d, pk);
+                const p = cp.planOf(dd);
+                const c = p ? p.cells[k] : null;
                 if(!c) return '<td class="ki-c ki-na"></td>';
                 const step = kiStepOf(c.st);
-                const off  = c.s ? staffOffOn(c.s, ymd(y,m,d)) : null;
+                const off  = c.s ? staffOffOn(c.s, dd.iso) : null;
                 const tip  = (c.s ? D.staffName(c.s) : 'ยังไม่มีผู้รับผิดชอบ') + (off ? ' — '+off.label : '');
                 return '<td class="ki-c ki-'+step+(off?' ki-off':'')+'" data-k="'+esc(k)+'" '
+                  + 'data-pk="'+esc(p.key)+'" data-iso="'+dd.iso+'" data-p="'+pk+'" '
                   + 'data-step="'+step+'" title="'+esc(tip)+'" tabindex="0" role="button">'
                   + KEYIN_MARK[step]+'</td>';
               }).join('')).join('')
             + '</tr>').join('')
         + '</tbody></table></div>'
       : '<div class="card"><div class="empty">ยังไม่มีตารางงานของช่วงนี้<br>'
-        + '<span class="hint">ไปที่หน้า “มอบหมายงาน” เลือกเดือนและพื้นที่ '
+        + '<span class="hint">ไปที่หน้า “มอบหมายงาน” เลือกรอบและพื้นที่ '
         + 'แล้วกด “สร้าง/อัปเดตตาราง” ก่อน</span></div></div>')
 
     + (defs.length
@@ -146,31 +159,26 @@ SCREENS.keyin = async function(v){
   /* ---------- ตัวควบคุมช่วงเวลา ---------- */
   $('#kiScope').onchange = e=>{ state.ui.kiScope = e.target.value; renderRoute(); };
   $('#kiArea').onchange  = e=>{ state.ui.areaId  = e.target.value; renderRoute(); };
-  $('#kiDate').onchange  = e=>{
-    const d = new Date(e.target.value);
-    state.ui.y = d.getFullYear(); state.ui.m = d.getMonth(); state.ui.kiDay = d.getDate();
-    renderRoute();
-  };
+  const goIso = iso=>{ state.ui.kiIso = iso; renderRoute(); };
+  $('#kiDate').onchange  = e=> goIso(e.target.value);
   const step = dir=>{
-    const d = new Date(ymd(y,m,day));
+    const d = new Date(sel.iso);
     d.setDate(d.getDate() + dir * (scope === 'week' ? 7 : 1));
-    state.ui.y = d.getFullYear(); state.ui.m = d.getMonth(); state.ui.kiDay = d.getDate();
-    renderRoute();
+    goIso(ymd(d.getFullYear(), d.getMonth(), d.getDate()));
   };
   $('#kiPrev').onclick  = ()=> step(-1);
   $('#kiNext').onclick  = ()=> step(1);
   $('#kiToday').onclick = ()=>{
     const t2 = todayParts();
-    state.ui.y = t2.y; state.ui.m = t2.m; state.ui.kiDay = t2.d;
-    renderRoute();
+    goIso(ymd(t2.y, t2.m, t2.d));
   };
   $('#kiVerify').onchange = e=>{ KI.verifyToo = e.target.checked; };
 
   if(!defs.length) return;
 
   /* ---------- แก้ไขช่อง ---------- */
-  const markDirty = ()=>{
-    KI.dirty.add(plan.key);
+  const markDirty = (pk)=>{
+    KI.dirty.add(pk);
     const el = $('#kiState');
     if(el){ el.textContent = 'มีการแก้ไขที่ยังไม่บันทึก'; el.style.color = 'var(--warn)'; }
     clearTimeout(KI.timer);
@@ -182,8 +190,11 @@ SCREENS.keyin = async function(v){
     if(el) el.textContent = n;
   };
   const applyCell = (cell, nextStep)=>{
+    const plan = state.plans[cell.dataset.pk];
+    if(!plan) return;
     const c = plan.cells[cell.dataset.k];
     if(!c) return;
+    const cd = new Date(cell.dataset.iso);
     const isOff = cell.classList.contains('ki-off');
     cell.dataset.step = nextStep;
     cell.className = 'ki-c ki-'+nextStep + (isOff ? ' ki-off' : '');
@@ -195,12 +206,13 @@ SCREENS.keyin = async function(v){
       delete c.rec; delete c.recAt; delete c.src;
     } else {
       c.by    = c.s ? D.staffName(c.s) : '';
-      c.at    = noonIsoOf(y, m, c.day);       // เวลาอ้างอิงตามวันบนกระดาษ ไม่ใช่เวลาที่คีย์
+      // เวลาอ้างอิงตามวันบนกระดาษ ไม่ใช่เวลาที่คีย์
+      c.at    = noonIsoOf(cd.getFullYear(), cd.getMonth(), cd.getDate());
       c.rec   = state.session.name;
       c.recAt = nowIso();
       c.src   = 'paper';
     }
-    markDirty();
+    markDirty(plan.key);
   };
   const cycle = cell=>{
     const cur  = cell.dataset.step;
@@ -225,8 +237,7 @@ SCREENS.keyin = async function(v){
   /* คลิกหัวคอลัมน์ = ติ๊ก/ล้างทั้งคอลัมน์ */
   $$('[data-fillcol]', v).forEach(th=> th.onclick = ()=>{
     const parts = th.dataset.fillcol.split('|');
-    const suffix = '|'+parts[0]+'|'+parts[1];
-    const cells = allCells.filter(c=> c.dataset.k.endsWith(suffix));
+    const cells = allCells.filter(c=> c.dataset.iso === parts[0] && c.dataset.p === parts[1]);
     const allDone = cells.length && cells.every(c=> c.dataset.step === 'done');
     cells.forEach(c=> applyCell(c, allDone ? 'clear' : 'done'));
     recount();

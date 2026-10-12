@@ -8,14 +8,15 @@ const DL = { dirty:false, timer:null };
 
 SCREENS.dailylog = async function(v){
   const t = todayParts();
-  const y = state.ui.y, m = state.ui.m;
-  const dim = daysInMonth(y, m);
-  const day = clampInt(state.ui.dlDay || ((y === t.y && m === t.m) ? t.d : 1), 1, dim);
-  state.ui.dlDay = day;
-  const iso = ymd(y, m, day);
+  // ยึดวันที่เป็นหลัก แล้วหารอบ 21–20 ที่วันนั้นอยู่
+  const iso = state.ui.dlIso || ymd(t.y, t.m, t.d);
+  const dt  = new Date(iso);
+  const y = dt.getFullYear(), m = dt.getMonth(), day = dt.getDate();
+  const cyc = cycleOfDate(y, m, day);
+  state.ui.cy = cyc.y; state.ui.cm = cyc.m;
 
-  await loadMonthAll(y, m);
-  const idx = monthWorkIndex(y, m);
+  await loadCycleAll(cyc.y, cyc.m);
+  const idx = cycleWorkIndex(cyc.y, cyc.m);
   const staffs = D.staffAll(true);
   const editable = can('dailylog');
 
@@ -37,14 +38,15 @@ SCREENS.dailylog = async function(v){
 
     + '<div class="toolbar">'
     +   '<div class="field" style="max-width:190px"><label>วันที่</label>'
-    +     '<input type="date" id="dlDate" value="'+iso+'"></div>'
+    +     '<input type="date" id="dlDate" value="'+iso+'">'
+    +     '<span class="hint">รอบ '+cycleLabelShort(cyc.y, cyc.m)+'</span></div>'
     +   '<div class="field"><label>&nbsp;</label><div class="row">'
     +     '<button class="btn sm" id="dlPrev">◀ วันก่อน</button>'
     +     '<button class="btn sm" id="dlToday">วันนี้</button>'
     +     '<button class="btn sm" id="dlNext">วันถัดไป ▶</button></div></div>'
     +   (canRoute('staffmonth')
         ? '<div class="field"><label>&nbsp;</label>'
-          + '<button class="btn" id="dlReport">📈 ดูสรุปรายเดือน</button></div>' : '')
+          + '<button class="btn" id="dlReport">📈 ดูสรุปรายรอบ</button></div>' : '')
     + '</div>'
 
     + (hd ? '<div class="card" style="border-color:var(--danger);background:var(--danger-soft)">'
@@ -64,7 +66,7 @@ SCREENS.dailylog = async function(v){
 
   /* ---------- ตัวควบคุมวันที่ ---------- */
   const goDay = d=>{
-    state.ui.y = d.getFullYear(); state.ui.m = d.getMonth(); state.ui.dlDay = d.getDate();
+    state.ui.dlIso = ymd(d.getFullYear(), d.getMonth(), d.getDate());
     renderRoute();
   };
   $('#dlDate').onchange = e=> goDay(new Date(e.target.value));

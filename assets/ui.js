@@ -28,7 +28,7 @@ const NAV = [
     { id:'holidays', ic:'📆', label:'ปฏิทินวันหยุด / วันลา' }
   ]},
   { grp:'ระบบ', items:[
-    { id:'staffmonth', ic:'📊', label:'สรุปรายเดือนรายบุคคล' },
+    { id:'staffmonth', ic:'📊', label:'สรุปรายรอบรายบุคคล' },
     { id:'report',     ic:'📈', label:'รายงานประวัติการทำงาน' },
     { id:'users',    ic:'🔐', label:'ผู้ใช้งานและสิทธิ์' },
     { id:'settings', ic:'⚙️', label:'ตั้งค่าระบบ' }
@@ -202,6 +202,37 @@ function monthPicker(idPrefix){
 function bindMonthPicker(idPrefix, onChange){
   $('#'+idPrefix+'Month').onchange = e=>{ state.ui.m = +e.target.value; onChange(); };
   $('#'+idPrefix+'Year').onchange  = e=>{ state.ui.y = +e.target.value; onChange(); };
+}
+
+/* ---------------------------------------------------------------
+   ตัวเลือก "รอบ 21–20" ที่ใช้ร่วมกันทุกหน้าจอ
+   เก็บรอบที่เลือกไว้ที่ state.ui.cy / state.ui.cm (เดือนที่รอบเริ่ม)
+   --------------------------------------------------------------- */
+function ensureCycle(){
+  if(state.ui.cy === undefined || state.ui.cm === undefined){
+    const c = currentCycle();
+    state.ui.cy = c.y; state.ui.cm = c.m;
+  }
+  return { y: state.ui.cy, m: state.ui.cm };
+}
+
+function cyclePicker(idPrefix){
+  const c = ensureCycle();
+  return '<div class="field"><label>รอบการทำงาน</label><div class="row">'
+    + '<button class="btn sm" id="'+idPrefix+'CyPrev">◀</button>'
+    + '<span class="badge b-verified" style="font-size:.92rem;padding:.28rem .6rem;white-space:nowrap">'
+    +   esc(cycleLabel(c.y, c.m))+'</span>'
+    + '<button class="btn sm" id="'+idPrefix+'CyNext">▶</button>'
+    + '<button class="btn sm" id="'+idPrefix+'CyNow">รอบนี้</button>'
+    + '</div></div>';
+}
+
+function bindCyclePicker(idPrefix, onChange){
+  const c = ensureCycle();
+  const set = (y, m)=>{ state.ui.cy = y; state.ui.cm = m; onChange(); };
+  $('#'+idPrefix+'CyPrev').onclick = ()=>{ const p = prevMonthOf(c.y, c.m); set(p.y, p.m); };
+  $('#'+idPrefix+'CyNext').onclick = ()=>{ const n = nextMonthOf(c.y, c.m); set(n.y, n.m); };
+  $('#'+idPrefix+'CyNow').onclick  = ()=>{ const n = currentCycle(); set(n.y, n.m); };
 }
 
 function areaPicker(id, includeAll){

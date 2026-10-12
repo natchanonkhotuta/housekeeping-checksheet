@@ -13,8 +13,10 @@ const PRINT_OPT = {
 };
 
 SCREENS.print = async function(v){
-  const y = state.ui.y, m = state.ui.m;
-  await loadMonthPlans(y, m);
+  const cyc = ensureCycle();
+  const y = cyc.y, m = cyc.m;
+  await loadCycleAll(y, m);
+  const cdays = cycleDays(y, m);
 
   if(state.ui.prArea === undefined)
     state.ui.prArea = state.ui.areaId || (D.areas(true)[0]||{}).id || '__all';
@@ -24,15 +26,18 @@ SCREENS.print = async function(v){
   if(isStaff){ PRINT_OPT.by = 'staff'; state.ui.prStaff = state.session.staffId; }
 
   const t = todayParts();
-  const dflt = (t.y === y && t.m === m) ? t.d : 1;
-  if(!PRINT_OPT.from) PRINT_OPT.from = ymd(y, m, dflt);
-  if(!PRINT_OPT.to)   PRINT_OPT.to   = ymd(y, m, dflt);
+  const todayIso = ymd(t.y, t.m, t.d);
+  const dfltIso = cdays.some(d=> d.iso === todayIso) ? todayIso : cdays[0].iso;
+  // ช่วงวันของใบรายวันต้องอยู่ในรอบที่เลือก
+  const inCyc = iso => cdays.some(d=> d.iso === iso);
+  if(!inCyc(PRINT_OPT.from)) PRINT_OPT.from = dfltIso;
+  if(!inCyc(PRINT_OPT.to))   PRINT_OPT.to   = dfltIso;
 
   v.innerHTML =
     '<div class="page-head noprint"><h1>🖨️ พิมพ์ / ส่งออก CHECK SHEET</h1><span class="sp"></span></div>'
     + '<div class="card noprint">'
     + '<div class="toolbar" style="margin-bottom:.2rem">'
-    +   monthPicker('pr')
+    +   cyclePicker('pr')
     +   '<div class="field" style="max-width:180px"><label>แยกเอกสารตาม</label><select id="prBy"'
     +     (isStaff?' disabled':'')+'>'
     +     '<option value="area"'+(PRINT_OPT.by==='area'?' selected':'')+'>พื้นที่</option>'
@@ -51,8 +56,8 @@ SCREENS.print = async function(v){
     +       '>🗓️ ใบเช็คงานรายวัน — พิมพ์แล้วสแกนกลับได้</option></select></div>'
     +   '<div class="field" id="prRangeBox" style="max-width:340px;margin-bottom:0;'
     +     (PRINT_OPT.doc==='daily'?'':'display:none')+'"><label>ช่วงวันที่ของใบรายวัน</label><div class="row">'
-    +     '<input type="date" id="prFrom" style="max-width:160px" value="'+PRINT_OPT.from+'">'
-    +     '<input type="date" id="prTo" style="max-width:160px" value="'+PRINT_OPT.to+'"></div></div>'
+    +     '<input type="date" id="prFrom" style="max-width:160px" value="'+PRINT_OPT.from+'" min="'+cdays[0].iso+'" max="'+cdays[cdays.length-1].iso+'">'
+    +     '<input type="date" id="prTo" style="max-width:160px" value="'+PRINT_OPT.to+'" min="'+cdays[0].iso+'" max="'+cdays[cdays.length-1].iso+'"></div></div>'
     +   '<label class="chk'+(PRINT_OPT.showSub?' on':'')+'"><input type="checkbox" id="prSub"'
     +     (PRINT_OPT.showSub?' checked':'')+'> แสดงแถวหัวหน้าแม่บ้านตรวจสอบ</label>'
     +   '<span class="sp" style="flex:1"></span>'
@@ -66,7 +71,7 @@ SCREENS.print = async function(v){
     + '<div id="sheetArea"></div>';
 
   bindChkStyle(v);
-  bindMonthPicker('pr', renderRoute);
+  bindCyclePicker('pr', renderRoute);
 
   const renderTarget = ()=>{
     const box = $('#prTargetBox');
@@ -105,23 +110,40 @@ SCREENS.print = async function(v){
   drawSheets();
 };
 
-/** รายการเอกสารที่จะพิมพ์ (1 spec = 1 CHECK SHEET) */
+/** รายการเอกสารที่จะพิมพ์ (1 spec = 1 CHECK SHEET ของรอบ 21–20) */
 function buildSheetSpecs(){
-  const y = state.ui.y, m = state.ui.m;
+  const cyc = ensureCycle();
+  const y = cyc.y, m = cyc.m;
+  const days = cycleDays(y, m);
   const specs = [];
+
+  // ช่องงานของพื้นที่หนึ่งเฉพาะวันที่อยู่ในรอบ — [{ dd, plan, c }]
+  const entriesOf = areaId=>{
+    const out = [];
+    days.forEach(dd=>{
+      const p = planAt(dd, areaId);
+      if(!p) return;
+      for(const k in p.cells){
+        const c = p.cells[k];
+        if(c.day === dd.d) out.push({ dd, plan:p, c });
+      }
+    });
+    return out;
+  };
+  const plansOf = areaId=> cycleMonths(y, m)
+    .map(c=> state.plans[planKey(c.y, c.m, areaId)]).filter(Boolean);
 
   if(PRINT_OPT.by === 'area'){
     const areas = (state.ui.prArea === '__all' || !state.ui.prArea)
       ? D.areas(true) : [D.area(state.ui.prArea)].filter(Boolean);
     areas.forEach(a=>{
-      const plan = state.plans[planKey(y, m, a.id)];
-      if(!plan) return;
-      const defs = D.taskDefs(a.id, true)
-        .filter(td=> Object.values(plan.cells).some(c=> c.t === td.id));
-      const names = Array.from(new Set(Object.values(plan.cells).map(c=>c.s).filter(Boolean)))
-        .map(D.staffName);
+      const ents = entriesOf(a.id);
+      if(!ents.length) return;
+      const ids  = new Set(ents.map(e=> e.c.t));
+      const defs = D.taskDefs(a.id, true).filter(td=> ids.has(td.id));
+      const names = Array.from(new Set(ents.map(e=> e.c.s).filter(Boolean))).map(D.staffName);
       specs.push({
-        title: a.name, areaId: a.id, staffId:'', plan, defs,
+        title: a.name, areaId: a.id, staffId:'', plans: plansOf(a.id), days, defs,
         headerStaff: names.length ? names.join(', ') : '……………………………………',
         headerArea: a.name
       });
@@ -131,20 +153,19 @@ function buildSheetSpecs(){
       ? D.staffAll(true) : [D.staff(state.ui.prStaff)].filter(Boolean);
     staffs.forEach(s=>{
       D.areas(true).forEach(a=>{
-        const plan = state.plans[planKey(y, m, a.id)];
-        if(!plan) return;
-        const mine = Object.values(plan.cells).filter(c=> c.s === s.id);
+        const mine = entriesOf(a.id).filter(e=> e.c.s === s.id);
         if(!mine.length) return;
-        const ids = new Set(mine.map(c=>c.t));
+        const ids = new Set(mine.map(e=> e.c.t));
         const defs = D.taskDefs(a.id, true).filter(td=> ids.has(td.id));
         specs.push({
-          title: s.name+' — '+a.name, areaId: a.id, staffId: s.id, plan, defs,
+          title: s.name+' — '+a.name, areaId: a.id, staffId: s.id,
+          plans: plansOf(a.id), days, defs,
           headerStaff: s.name, headerArea: a.name
         });
       });
     });
   }
-  return specs.filter(s=> s.plan && s.defs.length);
+  return specs.filter(s=> s.plans.length && s.defs.length);
 }
 
 /** วาดเอกสารทั้งหมดลงหน้าตัวอย่าง */
@@ -160,7 +181,7 @@ async function drawSheets(){
 
   const specs = buildSheetSpecs();
   if(!specs.length){
-    host.innerHTML = '<div class="card"><div class="empty">ยังไม่มีตารางงานของเดือนนี้<br>'
+    host.innerHTML = '<div class="card"><div class="empty">ยังไม่มีตารางงานของรอบนี้<br>'
       + '<span class="hint">ไปที่หน้า “มอบหมายงาน” แล้วกด “สร้าง/อัปเดตตาราง” ก่อน</span></div></div>';
     return;
   }
@@ -181,28 +202,33 @@ async function drawSheets(){
 /** HTML ของ CHECK SHEET 1 หน้า */
 function sheetHtml(p, pageNo, pageTotal){
   const sp = p.sp, defs = p.defs, startNo = p.startNo;
-  const y = state.ui.y, m = state.ui.m;
-  const dim = daysInMonth(y, m);
+  const cyc = ensureCycle();
+  const y = cyc.y, m = cyc.m;
+  const days = sp.days;
+  const dim = days.length;
   const org = state.data.org;
-  const plan = sp.plan;
+  const planOf = dd => sp.plans.find(x=> x.y === dd.y && x.m === dd.m) || null;
+  const plan = sp.plans[0];
 
   let thDays = '', thPeriods = '';
-  for(let d = 1; d <= dim; d++){
-    const dow = dowOf(y, m, d);
-    const hd  = holidayOn(ymd(y, m, d));
+  days.forEach(dd=>{
+    const dow = dowOf(dd.y, dd.m, dd.d);
+    const hd  = holidayOn(dd.iso);
     const cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
-    thDays    += '<th colspan="2" class="'+cls+'">'+d+'<div class="p">'+TH_DOW_SHORT[dow]+'</div></th>';
+    thDays    += '<th colspan="2" class="'+cls+'">'+dd.d+'<div class="p">'
+               + (dd.d === 1 ? TH_MONTHS_SHORT[dd.m] : TH_DOW_SHORT[dow])+'</div></th>';
     thPeriods += '<th class="'+cls+' p">ช</th><th class="'+cls+' p">บ</th>';
-  }
+  });
 
   const rows = defs.map((td,i)=>{
     let tds = '';
-    for(let d = 1; d <= dim; d++){
-      const iso = ymd(y, m, d);
-      const dow = dowOf(y, m, d);
+    days.forEach(dd=>{
+      const iso = dd.iso;
+      const dow = dowOf(dd.y, dd.m, dd.d);
       const hd  = holidayOn(iso);
+      const dp  = planOf(dd);
       PERIOD_KEYS.forEach(pk=>{
-        const c = plan.cells[cellKey(td.id, d, pk)];
+        const c = dp ? dp.cells[cellKey(td.id, dd.d, pk)] : null;
         let cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
         let mark = '';
         if(c && !(sp.staffId && c.s !== sp.staffId)){
@@ -214,7 +240,7 @@ function sheetHtml(p, pageNo, pageTotal){
         }
         tds += '<td class="'+cls+' mk">'+esc(mark)+'</td>';
       });
-    }
+    });
     return '<tr><td class="no">'+(startNo+i)+'</td>'
       + '<td class="tk" title="'+esc(td.detail||'')+'">'+esc(td.name)+'</td>'+tds+'</tr>';
   }).join('');
@@ -222,20 +248,21 @@ function sheetHtml(p, pageNo, pageTotal){
   let supRow = '';
   if(PRINT_OPT.showSub){
     let tds = '';
-    for(let d = 1; d <= dim; d++){
-      const dow = dowOf(y, m, d);
-      const hd  = holidayOn(ymd(y, m, d));
-      const dayCells = Object.values(plan.cells)
-        .filter(c=> c.day === d && (!sp.staffId || c.s === sp.staffId));
+    days.forEach(dd=>{
+      const dow = dowOf(dd.y, dd.m, dd.d);
+      const hd  = holidayOn(dd.iso);
+      const dp  = planOf(dd);
+      const dayCells = dp ? Object.values(dp.cells)
+        .filter(c=> c.day === dd.d && (!sp.staffId || c.s === sp.staffId)) : [];
       const cls = hd ? 'hol' : dow === 0 ? 'sun' : (dayCells.length ? '' : 'na');
       const anyVerified = dayCells.some(c=> c.st === 'verified');
       tds += '<td colspan="2" class="'+cls+' mk">'
         + (anyVerified && PRINT_OPT.showStatus ? '✓' : '')+'</td>';
-    }
+    });
     supRow = '<tr><td class="no"></td><td class="tk"><b>หัวหน้าแม่บ้านตรวจสอบ</b></td>'+tds+'</tr>';
   }
 
-  const approved = plan.approvals && plan.approvals.plan;
+  const approved = sp.plans.map(x=> x.approvals && x.approvals.plan).filter(Boolean)[0];
   const colW = (78.8 / (dim * 2)).toFixed(3);
 
   return '<div class="sheet">'
@@ -243,17 +270,19 @@ function sheetHtml(p, pageNo, pageTotal){
     +   '<div class="co">'+esc(org.name)
     +     '<div style="font-size:8pt;font-weight:400">'+esc(org.dept)+'</div></div>'
     +   '<div class="ti"><div class="t1">CHECK SHEET การทำงานของแม่บ้าน</div>'
-    +     '<div class="t2">ประจำเดือน '+TH_MONTHS[m]+' พ.ศ. '+beYear(y)+'</div></div>'
+    +     '<div class="t2">ประจำรอบ '+cycleLabel(y, m)+'</div></div>'
     +   '<div class="meta">เอกสารเลขที่ '+esc(org.doc)+'<br>แก้ไขครั้งที่ '+esc(org.rev)
     +     '<br>หน้า '+pageNo+'/'+pageTotal+'</div>'
     + '</div>'
     + '<div class="sh-info">'
     +   '<div><b>ผู้ปฏิบัติงาน:</b> '+esc(sp.headerStaff)+'</div>'
     +   '<div><b>สถานที่ / พื้นที่:</b> '+esc(sp.headerArea)+'</div>'
-    +   '<div><b>เดือน:</b> '+TH_MONTHS[m]+'</div>'
-    +   '<div><b>ปี พ.ศ.:</b> '+beYear(y)+'</div>'
+    +   '<div><b>รอบเดือน:</b> '+cycleLabelShort(y, m)+'</div>'
+    +   '<div><b>ปี พ.ศ.:</b> '+(beYear(y) === beYear(cycleEndOf(y,m).y)
+    ?     beYear(y) : beYear(y)+'–'+beYear(cycleEndOf(y,m).y))+'</div>'
     +   '<div><b>สถานะเอกสาร:</b> '
-    +     (plan.status==='approved'?'อนุมัติแล้ว':plan.status==='review'?'รอตรวจสอบ':'แบบร่าง')+'</div>'
+    +     (sp.plans.every(x=> x.status==='approved')?'อนุมัติแล้ว'
+    :     sp.plans.some(x=> x.status==='review')?'รอตรวจสอบ':'แบบร่าง')+'</div>'
     + '</div>'
     + '<table class="cs"><colgroup><col style="width:2.2%"><col style="width:19%">'
     +   Array.from({length: dim*2}).map(()=>'<col style="width:'+colW+'%">').join('')
@@ -345,7 +374,8 @@ async function drawDailySheets(host){
 
 /** ตั้งชื่อไฟล์อัตโนมัติ */
 function sheetFileName(ext){
-  const y = state.ui.y, m = state.ui.m;
+  const cyc = ensureCycle();
+  const y = cyc.y, m = cyc.m;
   const suffix = ext ? '.'+ext : '';
   if(PRINT_OPT.doc === 'daily'){
     const who = (state.ui.prArea === '__all' || !state.ui.prArea)
@@ -358,7 +388,7 @@ function sheetFileName(ext){
   else
     who = (state.ui.prStaff === '__all' || !state.ui.prStaff)
       ? 'ทุกคน' : D.staffName(state.ui.prStaff).replace(/\s+/g,'');
-  return 'CheckSheet_'+who+'_'+TH_MONTHS[m]+'_'+beYear(y)+suffix;
+  return 'CheckSheet_'+who+'_รอบ'+cycleLabelShort(y, m)+suffix;
 }
 
 function doPrint(){
@@ -402,8 +432,10 @@ function csvFallback(rowsAoA, filename){
 
 function exportCheckSheetExcel(specs){
   if(!specs.length){ toast('ยังไม่มีข้อมูลให้ส่งออก','err'); return; }
-  const y = state.ui.y, m = state.ui.m;
-  const dim = daysInMonth(y, m);
+  const cyc = ensureCycle();
+  const y = cyc.y, m = cyc.m;
+  const days = (specs[0] && specs[0].days) || cycleDays(y, m);
+  const dim = days.length;
   const org = state.data.org;
   const hasXLSX = (typeof XLSX !== 'undefined');
   const wb = hasXLSX ? XLSX.utils.book_new() : null;
@@ -413,28 +445,31 @@ function exportCheckSheetExcel(specs){
     const aoa = [];
     aoa.push([org.name]);
     aoa.push([org.dept, '', 'CHECK SHEET การทำงานของแม่บ้าน']);
-    aoa.push(['เอกสารเลขที่', org.doc, 'ประจำเดือน', TH_MONTHS[m], 'พ.ศ.', beYear(y)]);
+    aoa.push(['เอกสารเลขที่', org.doc, 'ประจำรอบ', cycleLabel(y, m)]);
     aoa.push(['ผู้ปฏิบัติงาน', sp.headerStaff, 'สถานที่', sp.headerArea, 'สถานะ',
-      sp.plan.status==='approved'?'อนุมัติแล้ว':sp.plan.status==='review'?'รอตรวจสอบ':'แบบร่าง']);
+      sp.plans.every(x=> x.status==='approved')?'อนุมัติแล้ว'
+      : sp.plans.some(x=> x.status==='review')?'รอตรวจสอบ':'แบบร่าง']);
     aoa.push([]);
 
     const h1 = ['ที่','รายการงาน'], h2 = ['',''], dowRow = ['',''];
-    for(let d = 1; d <= dim; d++){
-      h1.push(d, ''); h2.push('ช','บ');
-      dowRow.push(TH_DOW_SHORT[dowOf(y,m,d)], '');
-    }
+    days.forEach(dd=>{
+      h1.push(dd.d + (dd.d === 1 ? ' '+TH_MONTHS_SHORT[dd.m] : ''), '');
+      h2.push('ช','บ');
+      dowRow.push(TH_DOW_SHORT[dowOf(dd.y,dd.m,dd.d)], '');
+    });
     aoa.push(h1); aoa.push(h2); aoa.push(dowRow);
 
     sp.defs.forEach((td,i)=>{
       const r = [i+1, td.name];
-      for(let d = 1; d <= dim; d++){
+      days.forEach(dd=>{
+        const dp = sp.plans.find(x=> x.y === dd.y && x.m === dd.m);
         PERIOD_KEYS.forEach(pk=>{
-          const c = sp.plan.cells[cellKey(td.id, d, pk)];
+          const c = dp ? dp.cells[cellKey(td.id, dd.d, pk)] : null;
           if(!c || (sp.staffId && c.s !== sp.staffId)){ r.push(''); return; }
-          const off = c.s ? staffOffOn(c.s, ymd(y,m,d)) : null;
+          const off = c.s ? staffOffOn(c.s, dd.iso) : null;
           r.push((off && !ST_DONE.includes(c.st)) ? 'ห' : (STATUS[c.st] ? STATUS[c.st].mark : ''));
         });
-      }
+      });
       aoa.push(r);
     });
 
@@ -471,7 +506,7 @@ function exportCheckSheetExcel(specs){
 function exportReportExcel(y, m, plans, byStaff){
   const aoa = [];
   aoa.push([state.data.org.name]);
-  aoa.push(['รายงานสรุปผลการปฏิบัติงานแม่บ้าน','ประจำเดือน', TH_MONTHS[m], 'พ.ศ.', beYear(y)]);
+  aoa.push(['รายงานสรุปผลการปฏิบัติงานแม่บ้าน','ประจำรอบ', cycleLabel(y, m)]);
   aoa.push([]);
   aoa.push(['แม่บ้าน','พื้นที่หลัก','งานที่ได้รับ','เสร็จ','ตรวจผ่าน','ไม่ผ่าน','ค้าง','อัตราสำเร็จ (%)']);
   Object.keys(byStaff).forEach(sid=>{
@@ -484,10 +519,14 @@ function exportReportExcel(y, m, plans, byStaff){
   aoa.push(['รายละเอียดรายวัน']);
   aoa.push(['วันที่','ช่วง','พื้นที่','รหัสงาน','รายการงาน','ผู้รับผิดชอบ','สถานะ',
             'ผู้ปฏิบัติ','เวลาบันทึก','ผู้คีย์ข้อมูล','ที่มา','ผู้ตรวจสอบ','หมายเหตุ']);
+  // เฉพาะวันที่อยู่ในรอบ 21–20 (แผนงานกินสองเดือนปฏิทิน)
+  const inCycle = {};
+  cycleDays(y, m).forEach(dd=>{ inCycle[dd.y+'-'+dd.m+'-'+dd.d] = true; });
   plans.forEach(p=>{
     Object.values(p.cells).sort((a,b)=> a.day - b.day).forEach(c=>{
+      if(!inCycle[p.y+'-'+p.m+'-'+c.day]) return;
       const td = D.taskDef(c.t);
-      aoa.push([ c.day, PERIODS[c.p], D.areaName(p.areaId), td?td.code:'', td?td.name:'',
+      aoa.push([ c.day+' '+TH_MONTHS_SHORT[p.m], PERIODS[c.p], D.areaName(p.areaId), td?td.code:'', td?td.name:'',
         c.s ? D.staffName(c.s) : '', STATUS[c.st] ? STATUS[c.st].label : c.st,
         c.by||'', c.at ? thStamp(c.at) : '', c.rec||'',
         c.src === 'scan' ? 'สแกน' : c.src === 'paper' ? 'คีย์จากกระดาษ' : 'ในระบบ',
@@ -495,7 +534,7 @@ function exportReportExcel(y, m, plans, byStaff){
     });
   });
 
-  const fn = 'รายงานแม่บ้าน_'+TH_MONTHS[m]+'_'+beYear(y)+'.xlsx';
+  const fn = 'รายงานแม่บ้าน_รอบ'+cycleLabelShort(y, m)+'.xlsx';
   if(typeof XLSX === 'undefined'){ csvFallback(aoa, fn); return; }
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(aoa);

@@ -4,52 +4,65 @@
    ===================================================================== */
 'use strict';
 
-/** ช่วงวันที่ของรอบตรวจปัจจุบัน */
+/** ช่วงวันที่ของรอบตรวจปัจจุบัน — อยู่ภายในรอบ 21–20 เสมอ */
 function verifyRange(){
-  const y = state.ui.y, m = state.ui.m, dim = daysInMonth(y, m);
-  const t = todayParts();
-  let day = state.ui.vfDay;
-  if(!day) day = (t.y === y && t.m === m) ? t.d : 1;
-  day = clampInt(day, 1, dim);
+  const cyc  = ensureCycle();
+  const days = cycleDays(cyc.y, cyc.m);
+  const t    = todayParts();
+  const todayIso = ymd(t.y, t.m, t.d);
+
+  let iso = state.ui.vfIso;
+  if(!days.some(d=> d.iso === iso))
+    iso = days.some(d=> d.iso === todayIso) ? todayIso : days[0].iso;
+  const idx = days.findIndex(d=> d.iso === iso);
 
   const scope = state.ui.vfScope || 'day';
-  if(scope === 'day')  return { scope, day, from:day, to:day, dim };
-  if(scope === 'week'){
-    const from = Math.max(1, day - dowOf(y, m, day));
-    return { scope, day, from, to: Math.min(dim, from + 6), dim };
-  }
-  return { scope, day, from:1, to:dim, dim };
+  let list;
+  if(scope === 'day') list = [days[idx]];
+  else if(scope === 'week'){
+    let from = idx;
+    while(from > 0 && dowOf(days[from].y, days[from].m, days[from].d) !== 0) from--;
+    list = days.slice(from, from + 7);
+  } else list = days.slice();
+
+  const inList = {};
+  list.forEach(x=>{ inList[x.iso] = true; });
+  return { scope, iso, day: days[idx], days: list, inList, cycleDays: days, cy: cyc.y, cm: cyc.m };
 }
 
 function rangeLabel(r){
-  const y = state.ui.y, m = state.ui.m;
-  if(r.scope === 'day')  return thDateLong(ymd(y,m,r.day))+' ('+TH_DOW[dowOf(y,m,r.day)]+')';
-  if(r.scope === 'week') return r.from+' – '+r.to+' '+TH_MONTHS[m]+' '+beYear(y);
-  return 'ทั้งเดือน '+TH_MONTHS[m]+' '+beYear(y);
+  const d = r.day;
+  if(r.scope === 'day')  return thDateLong(d.iso)+' ('+TH_DOW[dowOf(d.y,d.m,d.d)]+')';
+  if(r.scope === 'week'){
+    const a = r.days[0], b = r.days[r.days.length-1];
+    return thDate(a.iso)+' – '+thDate(b.iso);
+  }
+  return 'ทั้งรอบ '+cycleLabel(r.cy, r.cm);
 }
 
 SCREENS.verify = async function(v){
-  const y = state.ui.y, m = state.ui.m;
-  await loadMonthPlans(y, m);
-
   const r = verifyRange();
-  state.ui.vfDay = r.day;
+  const y = r.cy, m = r.cm;
+  await loadCycleAll(y, m);
+  state.ui.vfIso = r.iso;
   const areaId = (state.ui.areaId && D.area(state.ui.areaId)) ? state.ui.areaId : '';
   const show = state.ui.vfShow || 'todo';
   const staffFilter = state.ui.vfStaff || '';
 
   /* ---- รวบรวมงานในรอบตรวจ ---- */
   const all = [];
-  D.areas(true).forEach(a=>{
-    if(areaId && a.id !== areaId) return;
-    const p = state.plans[planKey(y, m, a.id)];
-    if(!p) return;
-    for(const k in p.cells){
-      const c = p.cells[k];
-      if(c.day < r.from || c.day > r.to) continue;
-      if(staffFilter && c.s !== staffFilter) continue;
-      all.push({ p, k, c, area:a, td: D.taskDef(c.t) });
-    }
+  r.days.forEach(dd=>{
+    D.areas(true).forEach(a=>{
+      if(areaId && a.id !== areaId) return;
+      const p = planAt(dd, a.id);
+      if(!p) return;
+      for(const k in p.cells){
+        const c = p.cells[k];
+        if(c.day !== dd.d) continue;
+        if(staffFilter && c.s !== staffFilter) continue;
+        all.push({ p, k, c, dd, area:a, td: D.taskDef(c.t) });
+      }
+    });
   });
 
   const isTodo    = x=> x.c.st === 'done';                  // แม่บ้านบันทึกแล้ว รอหัวหน้าตรวจ
@@ -70,7 +83,7 @@ SCREENS.verify = async function(v){
   if(show === 'todo')      rows = all.filter(x=> isTodo(x) || isProblem(x));
   else if(show === 'open') rows = all.filter(isNotDone);
   else if(show !== 'all')  rows = all.filter(x=> x.c.st === show);
-  rows.sort((a,b)=> a.c.day - b.c.day
+  rows.sort((a,b)=> (a.dd.iso < b.dd.iso ? -1 : a.dd.iso > b.dd.iso ? 1 : 0)
     || (a.area.order - b.area.order)
     || (a.c.p === b.c.p ? ((a.td?a.td.order:0) - (b.td?b.td.order:0)) : (a.c.p === 'morning' ? -1 : 1)));
 
@@ -98,17 +111,19 @@ SCREENS.verify = async function(v){
     +   '<div class="field" style="max-width:170px"><label>รอบการตรวจ</label><select id="vfScope">'
     +     '<option value="day"'+(r.scope==='day'?' selected':'')+'>รายวัน</option>'
     +     '<option value="week"'+(r.scope==='week'?' selected':'')+'>รายสัปดาห์</option>'
-    +     '<option value="month"'+(r.scope==='month'?' selected':'')+'>ทั้งเดือน</option></select></div>'
+    +     '<option value="month"'+(r.scope==='month'?' selected':'')+'>ทั้งรอบ 21–20</option></select></div>'
     +   (r.scope !== 'month'
         ? '<div class="field" style="max-width:180px"><label>'
           + (r.scope === 'day' ? 'วันที่ตรวจ' : 'วันในสัปดาห์ที่ตรวจ')+'</label>'
-          + '<input type="date" id="vfDate" value="'+ymd(y,m,r.day)+'"></div>'
+          + '<input type="date" id="vfDate" value="'+r.iso+'" min="'+r.cycleDays[0].iso
+          + '" max="'+r.cycleDays[r.cycleDays.length-1].iso+'">'
+          + '<span class="hint">รอบ '+cycleLabelShort(y, m)+'</span></div>'
           + '<div class="field"><label>&nbsp;</label><div class="row">'
           + '<button class="btn sm" id="vfPrev">◀ '+(r.scope==='day'?'วันก่อน':'สัปดาห์ก่อน')+'</button>'
           + '<button class="btn sm" id="vfToday">วันนี้</button>'
           + '<button class="btn sm" id="vfNext">'+(r.scope==='day'?'วันถัดไป':'สัปดาห์ถัดไป')+' ▶</button>'
           + '</div></div>'
-        : monthPicker('vf'))
+        : cyclePicker('vf'))
     +   areaPicker('vfArea', true)
     +   '<div class="field" style="min-width:150px"><label>แม่บ้าน</label><select id="vfStaff">'
     +     selOptions(D.staffAll(true),'id','name',staffFilter,'— ทุกคน —')+'</select></div>'
@@ -192,25 +207,27 @@ SCREENS.verify = async function(v){
   /* ---- ตัวควบคุม ---- */
   $('#vfScope').onchange = e=>{ state.ui.vfScope = e.target.value; renderRoute(); };
   if($('#vfDate')){
-    $('#vfDate').onchange = e=>{
-      const d = new Date(e.target.value);
-      state.ui.y = d.getFullYear(); state.ui.m = d.getMonth(); state.ui.vfDay = d.getDate();
+    // เปลี่ยนวัน แล้วย้ายรอบตามให้อัตโนมัติ ถ้าวันนั้นอยู่คนละรอบ
+    const goIso = iso=>{
+      const d = new Date(iso);
+      const c = cycleOfDate(d.getFullYear(), d.getMonth(), d.getDate());
+      state.ui.cy = c.y; state.ui.cm = c.m;
+      state.ui.vfIso = ymd(d.getFullYear(), d.getMonth(), d.getDate());
       renderRoute();
     };
+    $('#vfDate').onchange = e=> goIso(e.target.value);
     const step = dir=>{
-      const d = new Date(ymd(y, m, r.day));
+      const d = new Date(r.iso);
       d.setDate(d.getDate() + dir * (r.scope === 'week' ? 7 : 1));
-      state.ui.y = d.getFullYear(); state.ui.m = d.getMonth(); state.ui.vfDay = d.getDate();
-      renderRoute();
+      goIso(ymd(d.getFullYear(), d.getMonth(), d.getDate()));
     };
     $('#vfPrev').onclick  = ()=> step(-1);
     $('#vfNext').onclick  = ()=> step(1);
     $('#vfToday').onclick = ()=>{
       const t = todayParts();
-      state.ui.y = t.y; state.ui.m = t.m; state.ui.vfDay = t.d;
-      renderRoute();
+      goIso(ymd(t.y, t.m, t.d));
     };
-  } else bindMonthPicker('vf', renderRoute);
+  } else bindCyclePicker('vf', renderRoute);
 
   $('#vfArea').onchange  = e=>{ state.ui.areaId  = e.target.value; renderRoute(); };
   $('#vfStaff').onchange = e=>{ state.ui.vfStaff = e.target.value; renderRoute(); };
@@ -258,21 +275,22 @@ SCREENS.verify = async function(v){
 
 /** แถวรายการ พร้อมหัวข้อคั่นเมื่อขึ้นวันใหม่ */
 function verifyRowsHtml(rows, r, canVerify){
-  const y = state.ui.y, m = state.ui.m;
-  let out = '', lastDay = null;
+  let out = '', lastIso = null;
   rows.forEach(x=>{
-    if(r.scope !== 'day' && x.c.day !== lastDay){
-      lastDay = x.c.day;
-      const hd = holidayOn(ymd(y, m, x.c.day));
-      const n  = rows.filter(z=> z.c.day === x.c.day).length;
+    const dd = x.dd;
+    if(r.scope !== 'day' && dd.iso !== lastIso){
+      lastIso = dd.iso;
+      const hd = holidayOn(dd.iso);
+      const n  = rows.filter(z=> z.dd.iso === dd.iso).length;
       out += '<tr style="background:var(--surface-2)"><td colspan="'+(canVerify?8:7)+'">'
-        + '<b>'+x.c.day+' '+TH_MONTHS[m]+' ('+TH_DOW[dowOf(y,m,x.c.day)]+')</b>'
+        + '<b>'+dd.d+' '+TH_MONTHS[dd.m]+' ('+TH_DOW[dowOf(dd.y,dd.m,dd.d)]+')</b>'
         + '<span class="hint"> — '+n+' รายการ</span>'
         + (hd ? ' <span class="badge b-failed">'+esc(hd.name)+'</span>' : '')+'</td></tr>';
     }
-    const off = x.c.s ? staffOffOn(x.c.s, ymd(y, m, x.c.day)) : null;
+    const off = x.c.s ? staffOffOn(x.c.s, dd.iso) : null;
     out += '<tr>'
-      + '<td class="num">'+x.c.day+'</td><td><span class="pill">'+PERIODS[x.c.p]+'</span></td>'
+      + '<td class="num">'+dd.d+' '+TH_MONTHS_SHORT[dd.m]+'</td>'
+      + '<td><span class="pill">'+PERIODS[x.c.p]+'</span></td>'
       + '<td>'+esc(x.area.name)+'</td>'
       + '<td><b>'+esc(x.td ? x.td.name : '—')+'</b>'
         + (x.td ? '<div class="hint">'+esc(x.td.code)+'</div>' : '')+'</td>'
@@ -384,12 +402,12 @@ const ROUND_SHEET_CSS = ''
   + '#printHost .rs thead{display:table-header-group}';
 
 function printRound(all, r, sum, byStaff){
-  const y = state.ui.y, m = state.ui.m, org = state.data.org;
-  const rows = all.slice().sort((a,b)=> a.c.day - b.c.day
+  const org = state.data.org;
+  const rows = all.slice().sort((a,b)=> (a.dd.iso < b.dd.iso ? -1 : a.dd.iso > b.dd.iso ? 1 : 0)
     || (a.area.order - b.area.order)
     || (a.c.p === b.c.p ? 0 : (a.c.p === 'morning' ? -1 : 1)));
 
-  const scopeName = r.scope === 'day' ? 'ประจำวัน' : r.scope === 'week' ? 'ประจำสัปดาห์' : 'ประจำเดือน';
+  const scopeName = r.scope === 'day' ? 'ประจำวัน' : r.scope === 'week' ? 'ประจำสัปดาห์' : 'ประจำรอบ';
   const html =
     '<div class="rs">'
     + '<div class="hd"><span><b>'+esc(org.name)+'</b> · '+esc(org.dept)+'</span>'
@@ -406,7 +424,8 @@ function printRound(all, r, sum, byStaff){
     +   '<th>รายการงาน</th><th>ผู้ปฏิบัติงาน</th><th class="c">สถานะ</th>'
     +   '<th>หมายเหตุ / สิ่งที่ต้องแก้ไข</th><th class="c">ผลตรวจ</th></tr></thead><tbody>'
     + (rows.length ? rows.map(x=>
-        '<tr><td class="c">'+x.c.day+'</td><td class="c">'+PERIODS[x.c.p]+'</td>'
+        '<tr><td class="c">'+x.dd.d+' '+TH_MONTHS_SHORT[x.dd.m]+'</td>'
+        + '<td class="c">'+PERIODS[x.c.p]+'</td>'
         + '<td>'+esc(x.area.name)+'</td><td>'+esc(x.td ? x.td.name : '—')+'</td>'
         + '<td>'+(x.c.s ? esc(D.staffName(x.c.s)) : '—')+'</td>'
         + '<td class="c">'+(STATUS[x.c.st] ? esc(STATUS[x.c.st].label) : '')+'</td>'
@@ -434,7 +453,7 @@ function printRound(all, r, sum, byStaff){
     + '</div>';
 
   printDocument({
-    title: 'ใบตรวจงาน_'+scopeName+'_'+TH_MONTHS[m]+'_'+beYear(y),
+    title: 'ใบตรวจงาน_'+scopeName+'_'+cycleLabelShort(r.cy, r.cm),
     html, css: ROUND_SHEET_CSS, orientation:'portrait', margin:'12mm'
   });
 }

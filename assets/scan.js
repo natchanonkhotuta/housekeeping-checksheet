@@ -647,12 +647,16 @@ function renderScanSummary(d, nDone, nClear){
     + '</div></div>';
 
   if($('#sumVerify')) $('#sumVerify').onclick = ()=>{
-    state.ui.y = d.y; state.ui.m = d.m; state.ui.vfDay = d.day;
+    const cv = cycleOfDate(d.y, d.m, d.day);
+    state.ui.cy = cv.y; state.ui.cm = cv.m;
+    state.ui.vfIso = ymd(d.y, d.m, d.day);
     state.ui.vfScope = 'day'; state.ui.vfShow = 'all'; state.ui.areaId = d.area.id;
     go('verify');
   };
   if($('#sumKeyin')) $('#sumKeyin').onclick = ()=>{
-    state.ui.y = d.y; state.ui.m = d.m; state.ui.kiDay = d.day;
+    const ck = cycleOfDate(d.y, d.m, d.day);
+    state.ui.cy = ck.y; state.ui.cm = ck.m;
+    state.ui.kiIso = ymd(d.y, d.m, d.day);
     state.ui.kiScope = 'day'; state.ui.areaId = d.area.id;
     go('keyin');
   };
