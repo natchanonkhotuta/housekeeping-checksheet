@@ -286,6 +286,14 @@ function rosterRowHtml(s, days, y, m, editable){
 /* =====================================================================
    2. พิมพ์ตารางกะ
    ===================================================================== */
+/** ช่องลงนามท้ายใบตารางกะ — ตามสายอนุมัติของฝ่ายบริหารทรัพยากรมนุษย์ */
+const SIGN_BLOCKS = [
+  { role:'ผู้จัดทำ',   title:'หัวหน้าแม่บ้าน' },
+  { role:'ผู้ตรวจสอบ', title:'หัวหน้าแผนกสื่อสารและแรงงานสัมพันธ์' },
+  { role:'ผู้ตรวจสอบ', title:'ผู้ช่วยผู้จัดการฝ่ายบริหารทรัพยากรมนุษย์' },
+  { role:'ผู้อนุมัติ', title:'ผู้จัดการฝ่ายบริหารทรัพยากรมนุษย์' }
+];
+
 const ROSTER_PRINT_CSS = ''
   + '#printHost .rt{font-family:"Sarabun","Noto Sans Thai",Tahoma,sans-serif;color:#000;background:#fff;font-size:9pt;'
   +   '-webkit-print-color-adjust:exact;print-color-adjust:exact}'
@@ -298,7 +306,9 @@ const ROSTER_PRINT_CSS = ''
   +   'font-size:7.5pt;text-align:center;overflow:hidden;color:#000}'
   + '#printHost .rt th{background:#e8e8e8;font-weight:700}'
   + '#printHost .rt td.nm,#printHost .rt th.nm{text-align:left;font-size:8.5pt;padding:2px 5px;'
-  +   'white-space:nowrap;text-overflow:ellipsis;width:18%}'
+  +   'white-space:nowrap;text-overflow:ellipsis;width:20%}'
+  + '#printHost .rt td.nm .ec{font-size:7pt;font-weight:400;color:#333;'
+  +   'border:.5pt solid #888;border-radius:2px;padding:0 2pt;margin-right:2pt}'
   + '#printHost .rt td.c{font-weight:700;font-size:7.5pt;line-height:1.1}'
   + '#printHost .rt td.c .sh{display:block;font-size:6.5pt;font-weight:400}'
   + '#printHost .rt td.c i{font-style:normal;display:inline-block;padding:0 .4pt}'
@@ -309,7 +319,8 @@ const ROSTER_PRINT_CSS = ''
   + '#printHost .rt .legend b{font-weight:700}'
   + '#printHost .rt .legend i{font-style:normal;padding:0 3px;border-radius:2px}'
   + '#printHost .rt .sign{display:flex;gap:10px;margin-top:12px;font-size:8.5pt}'
-  + '#printHost .rt .sign div{flex:1;border:.6pt solid #000;padding:5px 8px;min-height:52px}'
+  + '#printHost .rt .sign>div{flex:1;border:.6pt solid #000;padding:5px 6px;min-height:62px;font-size:8pt}'
+  + '#printHost .rt .sign .ps{font-size:7.5pt;margin:1px 0 2px;line-height:1.15}'
   + '#printHost .rt .ln{border-bottom:.6pt dotted #000;height:18px;margin:12px 0 3px}'
   + '#printHost .rt .foot{font-size:7pt;margin-top:4px;text-align:right}';
 
@@ -336,9 +347,9 @@ function printRoster(y, m){
     dowRow += '<th class="'+cls+'">'+TH_DOW_SHORT[dow]+'</th>';
   });
 
+  const usedOff = {};                 // ตัวอักษรวันหยุดที่ใช้จริงในรอบนี้ → ชื่อเต็ม
   const body = staffs.map(s=>{
-    const sum = rosterSummary(y, m, s.id);
-    let tds = '';
+    let tds = '', nWork = 0, nOff = 0, nDuty = 0;
     days.forEach(dd=>{
       const rec = rosterAt(dd, s.id);
       const ars = rosterAreas(rec);
@@ -346,37 +357,47 @@ function printRoster(y, m){
       let cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
       let inner = '';
       const duty = rosterDuty(rec);
-      if(rec.off){ cls = 'off'; inner = 'ห'; }
-      else if(duty){
-        cls = 'off';
+      if(!rec.off && duty){
+        cls = 'off'; nDuty++;
         inner = '<span class="sh"'+hlStyle(dutyColor(duty.id))+'>'+esc(duty.code)+'</span>';
       }
-      else if(rec.sh || ars.length){
+      else if(!rec.off && (rec.sh || ars.length)){
         const sh = shiftById(rec.sh);
+        nWork++;
         inner = '<span class="sh"'+hlStyle(shiftColor(rec.sh))+'>'
             + esc(sh ? sh.code : '?')+'</span>'
           + ars.map(id=>'<i'+hlStyle(rosterCellColor(rec.sh, id))+'>'
               + esc(areaShort(id))+'</i>').join('');
       }
+      else {
+        // วันหยุด — ระบุเหตุด้วยตัวอักษร W / H / V (หรือชนิดลาอื่น)
+        const om = offMarkOf(s.id, dd.iso, !!rec.off);
+        if(om){
+          cls = 'off'; nOff++;
+          usedOff[om.mk] = om.label;
+          inner = om.mk;
+        }
+      }
       tds += '<td class="c '+cls+'">'+inner+'</td>';
     });
-    return '<tr><td class="nm">'+esc(s.name)+'</td>'+tds
-      + '<td>'+sum.work+'</td><td>'+sum.off+'</td>'
-      + (anyDuty ? '<td>'+(sum.duty||'')+'</td>' : '')+'</tr>';
+    return '<tr><td class="nm"><span class="ec">'+esc(s.empCode||'—')+'</span> '
+      + esc(s.name)+'</td>'+tds
+      + '<td>'+(nWork||'')+'</td><td>'+(nOff||'')+'</td>'
+      + (anyDuty ? '<td>'+(nDuty||'')+'</td>' : '')+'</tr>';
   }).join('');
 
-  const colW = ((anyDuty ? 70 : 74) / days.length).toFixed(3);
+  const colW = ((anyDuty ? 68 : 72) / days.length).toFixed(3);
   const html =
     '<div class="rt">'
     + '<div class="hd"><span><b>'+esc(org.name)+'</b><br>'+esc(org.dept)+'</span>'
     +   '<h1>ตารางกะปฏิบัติงาน — แม่บ้าน<span>รอบ '+esc(cycleLabel(y, m))+'</span></h1>'
     +   '<span style="text-align:right">'+esc(org.doc)+'-R<br>แก้ไขครั้งที่ '+esc(org.rev)+'</span></div>'
-    + '<table><colgroup><col style="width:18%">'
+    + '<table><colgroup><col style="width:20%">'
     +   days.map(()=>'<col style="width:'+colW+'%">').join('')
     +   '<col style="width:4%"><col style="width:4%">'
     +   (anyDuty ? '<col style="width:4%">' : '')
     + '</colgroup><thead>'
-    +   '<tr><th class="nm" rowspan="2">แม่บ้าน</th>'+head
+    +   '<tr><th class="nm" rowspan="2">รหัส / ชื่อแม่บ้าน</th>'+head
     +     '<th rowspan="2">ทำงาน</th><th rowspan="2">หยุด</th>'
     +     (anyDuty ? '<th rowspan="2">พิเศษ</th>' : '')+'</tr>'
     +   '<tr>'+dowRow+'</tr></thead><tbody>'+body+'</tbody></table>'
@@ -388,7 +409,11 @@ function printRoster(y, m){
           return '<i'+hlStyle(hl)+'>'+esc(areaShort(a.id))+'</i> = '+esc(a.name);
         }).join(' &nbsp; ')
     +   '<br><b>วิธีอ่าน:</b> บรรทัดบนคือรหัสกะ บรรทัดล่างคือเลขตึกที่ไปทำวันนั้น '
-    +   '(หนึ่งวันมีได้หลายตึก) &nbsp; · &nbsp; ห = วันหยุด &nbsp; · &nbsp; ช่องว่าง = ยังไม่ได้ลงตาราง'
+    +   '(หนึ่งวันมีได้หลายตึก) &nbsp; · &nbsp; ช่องว่าง = ยังไม่ได้ลงตาราง'
+    +   '<br><b>วันหยุด / วันลา:</b> '
+    +   (Object.keys(usedOff).length
+        ? Object.keys(usedOff).sort().map(mk=>'<i>'+esc(mk)+'</i> = '+esc(usedOff[mk])).join(' &nbsp; ')
+        : '<i>W</i> = วันหยุดประจำสัปดาห์ &nbsp; <i>H</i> = วันหยุดประจำปีบริษัท &nbsp; <i>V</i> = ลาพักร้อน')
     +   (anyDuty
       ? '<br><b>ภารกิจพิเศษ</b> (ไม่มีการติดตามงาน): '
         + dutyList().map(d=>'<i'+hlStyle(dutyColor(d.id))+'>'+esc(d.code)+'</i> = '+esc(d.name))
@@ -400,9 +425,10 @@ function printRoster(y, m){
         : '')
     + '</div>'
     + '<div class="sign">'
-    +   '<div>ผู้จัดตาราง<div class="ln"></div>( …………………………… )<br>วันที่ …… / …… / ……</div>'
-    +   '<div>หัวหน้าแม่บ้าน<div class="ln"></div>( …………………………… )<br>วันที่ …… / …… / ……</div>'
-    +   '<div>ผู้อนุมัติ<div class="ln"></div>( …………………………… )<br>วันที่ …… / …… / ……</div></div>'
+    +   SIGN_BLOCKS.map(b=>
+          '<div><b>'+b.role+'</b><div class="ln"></div>( …………………………… )'
+          + '<div class="ps">'+b.title+'</div>วันที่ …… / …… / ……</div>').join('')
+    + '</div>'
     + '<div class="foot">พิมพ์ '+thStamp(nowIso())+' โดย '+esc(state.session.name)+'</div>'
     + '</div>';
 

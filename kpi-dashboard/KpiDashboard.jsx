@@ -1,0 +1,1025 @@
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
+
+// ---------------------------------------------------------------------------
+// Internal Comms & Employee Relations — real-time KPI dashboard
+// All figures are mock data. A simulated feed changes them every few seconds.
+// ---------------------------------------------------------------------------
+
+const HEADCOUNT = 1240;
+const TICK_MS = 4000;
+const FIVE_S_TARGET = 85;
+const READ_TARGET = 80;
+const HEALTH_TARGET = 65;
+const SLA_TARGET = 85;
+const HEALTH_LAST_MONTH = 61.0;
+
+const PILLARS = [
+  { en: "Sort", th: "สะสาง" },
+  { en: "Set in order", th: "สะดวก" },
+  { en: "Shine", th: "สะอาด" },
+  { en: "Standardize", th: "สุขลักษณะ" },
+  { en: "Sustain", th: "สร้างนิสัย" },
+];
+
+const INITIAL_ZONES = [
+  { zone: "Production A", th: "ไลน์ผลิต A", prev: 82, pillars: [90, 87, 89, 86, 88], audited: "14 Oct" },
+  { zone: "Production B", th: "ไลน์ผลิต B", prev: 76, pillars: [82, 78, 80, 77, 78], audited: "14 Oct" },
+  { zone: "Mixing", th: "ห้องผสม", prev: 71, pillars: [76, 72, 75, 73, 74], audited: "15 Oct" },
+  { zone: "Warehouse", th: "คลังสินค้า", prev: 85, pillars: [93, 92, 90, 90, 90], audited: "15 Oct" },
+  { zone: "QC Lab", th: "ห้องแล็บ QC", prev: 90, pillars: [95, 94, 93, 92, 91], audited: "16 Oct" },
+  { zone: "Maintenance", th: "ซ่อมบำรุง", prev: 68, pillars: [75, 70, 71, 73, 71], audited: "16 Oct" },
+  { zone: "Office", th: "สำนักงาน", prev: 88, pillars: [88, 86, 87, 85, 84], audited: "17 Oct" },
+  { zone: "Canteen", th: "โรงอาหาร", prev: 80, pillars: [86, 83, 85, 84, 82], audited: "17 Oct" },
+];
+
+const PR_SERIES = [
+  { sent: 14, read: 71.2, ack: 52.4 },
+  { sent: 16, read: 74.0, ack: 55.1 },
+  { sent: 12, read: 77.6, ack: 59.8 },
+  { sent: 18, read: 76.3, ack: 61.0 },
+  { sent: 15, read: 80.9, ack: 65.7 },
+  { sent: 11, read: 83.4, ack: 69.2 },
+];
+
+const ANNOUNCEMENTS = ["Q4 safety week schedule", "Updated OT policy", "Provident fund enrolment", "Year-end party sign-up", "New shuttle bus routes"];
+
+const ACTIVITIES = [
+  { key: "walk", name: "Walking Challenge", th: "เดินสะสมก้าว", value: 412 },
+  { key: "sports", name: "Sports Day", th: "กีฬาสี", value: 286 },
+  { key: "checkup", name: "Annual Health Check", th: "ตรวจสุขภาพประจำปี", value: 233 },
+  { key: "dental", name: "Mobile Dental Clinic", th: "ทันตกรรมเคลื่อนที่", value: 154 },
+  { key: "yoga", name: "Yoga & Aerobics", th: "โยคะ / แอโรบิก", value: 97 },
+];
+
+const CATEGORIES = [
+  { name: "Welfare & benefits", th: "สวัสดิการ", total: 58, resolved: 50 },
+  { name: "Payroll & OT queries", th: "เงินเดือน / OT", total: 44, resolved: 37 },
+  { name: "Shift & leave disputes", th: "กะงาน / การลา", total: 31, resolved: 22 },
+  { name: "Workplace facilities", th: "สภาพแวดล้อมการทำงาน", total: 35, resolved: 29 },
+  { name: "Grievances", th: "ข้อร้องทุกข์", total: 18, resolved: 10 },
+];
+
+const PALETTES = {
+  light: {
+    grid: "#e2e8f0", axis: "#64748b", axisStrong: "#334155", cursor: "rgba(148,163,184,0.14)", card: "#ffffff",
+    blue: "#2563eb", prev: "#cbd5e1", amber: "#d97706", teal: "#0d9488", emerald: "#059669", rose: "#e11d48",
+    slate: "#94a3b8", target: "#475569", track: "#e2e8f0",
+    tipBg: "#ffffff", tipBorder: "#e2e8f0", tipText: "#0f172a", tipMuted: "#64748b",
+    health: ["#059669", "#0284c7", "#d97706", "#7c3aed", "#64748b"],
+  },
+  dark: {
+    grid: "#1e293b", axis: "#94a3b8", axisStrong: "#cbd5e1", cursor: "rgba(148,163,184,0.08)", card: "#0f172a",
+    blue: "#60a5fa", prev: "#334155", amber: "#fbbf24", teal: "#2dd4bf", emerald: "#34d399", rose: "#fb7185",
+    slate: "#64748b", target: "#94a3b8", track: "#1e293b",
+    tipBg: "#0f172a", tipBorder: "#334155", tipText: "#f1f5f9", tipMuted: "#94a3b8",
+    health: ["#34d399", "#38bdf8", "#fbbf24", "#a78bfa", "#94a3b8"],
+  },
+};
+
+const FEED_STYLES = {
+  ticket: { label: "Ticket", cls: "bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-400/30" },
+  resolved: { label: "Resolved", cls: "bg-teal-50 text-teal-700 ring-teal-600/20 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-400/30" },
+  escalated: { label: "Escalated", cls: "bg-rose-50 text-rose-700 ring-rose-600/20 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-400/30" },
+  health: { label: "Health", cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30" },
+  pr: { label: "PR", cls: "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-400/30" },
+  audit: { label: "5S", cls: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/30" },
+};
+
+const TONES = {
+  good: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30",
+  warn: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/30",
+  bad: "bg-rose-50 text-rose-700 ring-rose-600/20 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-400/30",
+};
+
+// ---------- helpers ----------
+
+const avg = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+const zoneScore = (z) => Math.round(avg(z.pillars));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+const fmtTime = (d) => d.toLocaleTimeString("en-GB", { hour12: false });
+const signed = (n, digits = 1) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(digits)}`;
+
+function lastSixMonths(now) {
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    return d.toLocaleDateString("en-GB", { month: "short" });
+  });
+}
+
+function snapshot(s) {
+  const st = s.tickets.status;
+  const total = st.resolved + st.inProgress + st.open + st.escalated;
+  return {
+    fiveS: avg(s.zones.map(zoneScore)),
+    read: s.pr[s.pr.length - 1].read,
+    health: (s.health.unique / HEADCOUNT) * 100,
+    resolution: (st.resolved / total) * 100,
+  };
+}
+
+function initState() {
+  const now = new Date();
+  const months = lastSixMonths(now);
+  const base = {
+    zones: INITIAL_ZONES.map((z) => ({ ...z, pillars: [...z.pillars] })),
+    pr: PR_SERIES.map((p, i) => ({ ...p, m: months[i] })),
+    health: { activities: ACTIVITIES.map((a) => ({ ...a })), unique: 843 },
+    tickets: {
+      status: { resolved: 148, inProgress: 22, open: 12, escalated: 4 },
+      cats: CATEGORIES.map((c) => ({ ...c })),
+      nextId: 2187,
+      avgDays: 2.4,
+    },
+    updatedAt: now,
+  };
+  const snap = snapshot(base);
+  // Back-fill a short trail so the sparklines have shape on first paint.
+  const history = Array.from({ length: 24 }, (_, i) => {
+    const k = 23 - i;
+    const n = () => (Math.random() - 0.5) * 0.4;
+    return {
+      fiveS: snap.fiveS - k * 0.04 + n(),
+      read: snap.read - k * 0.08 + n(),
+      health: snap.health - k * 0.06 + n(),
+      resolution: snap.resolution - k * 0.03 + n(),
+    };
+  });
+  history[23] = snap;
+  const ago = (min) => new Date(now.getTime() - min * 60000);
+  const feed = [
+    { id: 1, t: ago(2), kind: "resolved", text: "Ticket #2181 resolved · Payroll & OT queries" },
+    { id: 2, t: ago(5), kind: "health", text: "New participant joined Walking Challenge" },
+    { id: 3, t: ago(9), kind: "pr", text: "+18 reads on “Updated OT policy”" },
+    { id: 4, t: ago(14), kind: "ticket", text: "New request #2186 logged · Welfare & benefits" },
+    { id: 5, t: ago(21), kind: "audit", text: "5S spot check · Maintenance · Shine (สะอาด) +1" },
+  ];
+  return { ...base, history, feed };
+}
+
+function randomEvent() {
+  const r = Math.random();
+  if (r < 0.2) return { type: "ticketNew", cat: randInt(0, 4) };
+  if (r < 0.4) return { type: "ticketResolve", cat: randInt(0, 4), offset: randInt(3, 40), days: 0.5 + Math.random() * 4 };
+  if (r < 0.5) return { type: "ticketPickup", offset: randInt(1, 12) };
+  if (r < 0.54) return { type: "ticketEscalate", offset: randInt(4, 30) };
+  if (r < 0.76) return { type: "health", act: randInt(0, 4), isNew: Math.random() < 0.6 };
+  if (r < 0.92) return { type: "pr", ann: randInt(0, ANNOUNCEMENTS.length - 1), reads: randInt(4, 28) };
+  return { type: "audit", zone: randInt(0, 7), pillar: randInt(0, 4), delta: Math.random() < 0.65 ? 1 : -1 };
+}
+
+function applyEvent(s, ev, now) {
+  let next = s;
+  let msg = null;
+  const t = s.tickets;
+  const st = t.status;
+
+  switch (ev.type) {
+    case "ticketNew": {
+      const cats = t.cats.map((c, i) => (i === ev.cat ? { ...c, total: c.total + 1 } : c));
+      next = { ...s, tickets: { ...t, cats, nextId: t.nextId + 1, status: { ...st, open: st.open + 1 } } };
+      msg = { kind: "ticket", text: `New request #${t.nextId} logged · ${t.cats[ev.cat].name}` };
+      break;
+    }
+    case "ticketResolve": {
+      const from = st.inProgress > 0 ? "inProgress" : st.escalated > 0 ? "escalated" : st.open > 0 ? "open" : null;
+      let ci = ev.cat;
+      if (t.cats[ci].resolved >= t.cats[ci].total) ci = t.cats.findIndex((c) => c.resolved < c.total);
+      if (!from || ci < 0) break;
+      const cats = t.cats.map((c, i) => (i === ci ? { ...c, resolved: c.resolved + 1 } : c));
+      const avgDays = t.avgDays * 0.95 + ev.days * 0.05;
+      next = { ...s, tickets: { ...t, cats, avgDays, status: { ...st, [from]: st[from] - 1, resolved: st.resolved + 1 } } };
+      msg = { kind: "resolved", text: `Ticket #${t.nextId - ev.offset} resolved · ${t.cats[ci].name}` };
+      break;
+    }
+    case "ticketPickup": {
+      if (st.open === 0) break;
+      next = { ...s, tickets: { ...t, status: { ...st, open: st.open - 1, inProgress: st.inProgress + 1 } } };
+      msg = { kind: "ticket", text: `Ticket #${t.nextId - ev.offset} assigned to an ER officer` };
+      break;
+    }
+    case "ticketEscalate": {
+      if (st.inProgress === 0) break;
+      next = { ...s, tickets: { ...t, status: { ...st, inProgress: st.inProgress - 1, escalated: st.escalated + 1 } } };
+      msg = { kind: "escalated", text: `Ticket #${t.nextId - ev.offset} escalated to the Labour Relations Committee` };
+      break;
+    }
+    case "health": {
+      const activities = s.health.activities.map((a, i) => (i === ev.act ? { ...a, value: a.value + 1 } : a));
+      const unique = ev.isNew ? Math.min(HEADCOUNT, s.health.unique + 1) : s.health.unique;
+      next = { ...s, health: { activities, unique } };
+      const a = s.health.activities[ev.act];
+      msg = { kind: "health", text: ev.isNew ? `New participant joined ${a.name}` : `Registration added · ${a.name}` };
+      break;
+    }
+    case "pr": {
+      const pr = s.pr.map((p, i) => {
+        if (i !== s.pr.length - 1) return p;
+        const read = Math.min(95, p.read + ev.reads * 0.012);
+        const ack = Math.min(read - 6, p.ack + ev.reads * 0.009);
+        return { ...p, read, ack };
+      });
+      next = { ...s, pr };
+      msg = { kind: "pr", text: `+${ev.reads} reads on “${ANNOUNCEMENTS[ev.ann]}”` };
+      break;
+    }
+    case "audit": {
+      const zones = s.zones.map((z, i) =>
+        i === ev.zone ? { ...z, pillars: z.pillars.map((v, j) => (j === ev.pillar ? clamp(v + ev.delta, 50, 100) : v)) } : z
+      );
+      next = { ...s, zones };
+      const p = PILLARS[ev.pillar];
+      msg = { kind: "audit", text: `5S spot check · ${s.zones[ev.zone].zone} · ${p.en} (${p.th}) ${ev.delta > 0 ? "+1" : "−1"}` };
+      break;
+    }
+    default:
+      break;
+  }
+  if (!msg) return s;
+  const feed = [{ id: now.getTime() + Math.random(), t: now, ...msg }, ...s.feed].slice(0, 9);
+  const history = [...s.history, snapshot(next)].slice(-24);
+  return { ...next, feed, history, updatedAt: now };
+}
+
+function csvCell(v) {
+  const str = String(v);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function buildCsv(s, now) {
+  const snap = snapshot(s);
+  const st = s.tickets.status;
+  const rows = [
+    ["Internal Comms & Employee Relations Dashboard"],
+    ["Exported", now.toLocaleString("en-GB")],
+    [],
+    ["Summary", "Value", "Target"],
+    ["5S average score", snap.fiveS.toFixed(1), FIVE_S_TARGET],
+    [`Announcement read rate (${s.pr[s.pr.length - 1].m})`, `${snap.read.toFixed(1)}%`, `${READ_TARGET}%`],
+    ["NER FOR HEALTH participation", `${snap.health.toFixed(1)}%`, `${HEALTH_TARGET}%`],
+    ["Ticket resolution rate", `${snap.resolution.toFixed(1)}%`, `${SLA_TARGET}%`],
+    [],
+    ["5S audit zone", "Previous", "Current", ...PILLARS.map((p) => p.en), "Audited"],
+    ...s.zones.map((z) => [z.zone, z.prev, zoneScore(z), ...z.pillars, z.audited]),
+    [],
+    ["Month", "Announcements sent", "Read rate %", "Acknowledged %"],
+    ...s.pr.map((p) => [p.m, p.sent, p.read.toFixed(1), p.ack.toFixed(1)]),
+    [],
+    ["NER FOR HEALTH activity", "Registrations"],
+    ...s.health.activities.map((a) => [a.name, a.value]),
+    ["Unique participants", s.health.unique],
+    ["Headcount", HEADCOUNT],
+    [],
+    ["Ticket category", "Total", "Resolved"],
+    ...s.tickets.cats.map((c) => [c.name, c.total, c.resolved]),
+    ["Status: resolved", st.resolved],
+    ["Status: in progress", st.inProgress],
+    ["Status: open", st.open],
+    ["Status: escalated", st.escalated],
+    ["Average resolution time (days)", s.tickets.avgDays.toFixed(1)],
+  ];
+  return rows.map((r) => r.map(csvCell).join(",")).join("\n");
+}
+
+// ---------- theme ----------
+
+function readDark() {
+  if (typeof document === "undefined") return false;
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function useDarkMode() {
+  const [dark, setDark] = useState(readDark);
+  useEffect(() => {
+    const update = () => setDark(readDark());
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", update);
+    const mo = new MutationObserver(update);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      mq.removeEventListener("change", update);
+      mo.disconnect();
+    };
+  }, []);
+  return dark;
+}
+
+// ---------- building blocks ----------
+
+function Card({ title, th, action, children, className = "" }) {
+  return (
+    <section className={`min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.03] sm:p-5 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none ${className}`}>
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold leading-snug text-slate-900 [text-wrap:balance] dark:text-slate-100">{title}</h2>
+          {th && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{th}</p>}
+        </div>
+        {action}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function Pill({ tone, children }) {
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${TONES[tone]}`}>{children}</span>;
+}
+
+function Swatch({ color, label, dashed }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+      {dashed ? (
+        <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: color }} />
+      ) : (
+        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+      )}
+      {label}
+    </span>
+  );
+}
+
+function TipBox({ pal, title, rows }) {
+  return (
+    <div className="rounded-lg px-3 py-2 text-xs shadow-lg" style={{ background: pal.tipBg, border: `1px solid ${pal.tipBorder}`, color: pal.tipText }}>
+      <div className="mb-1 font-semibold">{title}</div>
+      {rows.map(([k, v, c]) => (
+        <div key={k} className="flex items-center justify-between gap-4 tabular-nums">
+          <span className="inline-flex items-center gap-1.5" style={{ color: pal.tipMuted }}>
+            {c && <span className="inline-block h-2 w-2 rounded-full" style={{ background: c }} />}
+            {k}
+          </span>
+          <span className="font-medium">{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KpiCard({ label, th, value, unit, delta, deltaNote, status, history, dataKey, color }) {
+  const up = delta >= 0;
+  return (
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.03] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">{th}</p>
+        </div>
+        <Pill tone={status.tone}>{status.text}</Pill>
+      </div>
+      <div className="mt-3 flex items-baseline gap-1">
+        <span className="text-3xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-slate-50">{value}</span>
+        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{unit}</span>
+      </div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        <span className={`font-semibold tabular-nums ${up ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+          {up ? "▲" : "▼"} {signed(delta)} pts
+        </span>{" "}
+        {deltaNote}
+      </p>
+      <div className="mt-3 h-10" aria-hidden="true">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={history} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+            <defs>
+              <linearGradient id={`spark-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <YAxis hide domain={["dataMin - 0.3", "dataMax + 0.3"]} />
+            <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.75} fill={`url(#spark-${dataKey})`} isAnimationActive={false} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
+// ---------- sections ----------
+
+function FiveSCard({ zones, pal, selected, onSelect }) {
+  const data = zones.map((z) => ({ zone: z.zone, th: z.th, prev: z.prev, cur: zoneScore(z) }));
+  const sel = zones.find((z) => z.zone === selected) || zones[0];
+  const selScore = zoneScore(sel);
+  const below = data.filter((d) => d.cur < FIVE_S_TARGET).length;
+  return (
+    <Card
+      title="5S Audit Performance"
+      th="ผลการตรวจประเมิน 5ส รายพื้นที่ · คลิกแถวเพื่อดูคะแนนแต่ละ ส"
+      className="lg:col-span-2"
+      action={<Pill tone={below > 0 ? "warn" : "good"}>{below} of {data.length} zones below {FIVE_S_TARGET}</Pill>}
+    >
+      <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1">
+        <Swatch color={pal.blue} label="Current audit" />
+        <Swatch color={pal.amber} label="Current, below target" />
+        <Swatch color={pal.prev} label="Previous audit" />
+        <Swatch color={pal.target} label={`Target ${FIVE_S_TARGET}`} dashed />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_240px]">
+        <div className="h-[330px] min-w-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={data}
+              layout="vertical"
+              margin={{ top: 14, right: 12, left: 0, bottom: 0 }}
+              barGap={2}
+              barCategoryGap="24%"
+              onClick={(e) => e && e.activeLabel && onSelect(e.activeLabel)}
+              style={{ cursor: "pointer" }}
+            >
+              <CartesianGrid horizontal={false} stroke={pal.grid} />
+              <XAxis type="number" domain={[50, 100]} ticks={[50, 60, 70, 80, 90, 100]} tick={{ fill: pal.axis, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="zone" width={108} tick={{ fill: pal.axisStrong, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <Tooltip
+                cursor={{ fill: pal.cursor }}
+                content={({ active, payload, label }) =>
+                  active && payload && payload.length ? (
+                    <TipBox
+                      pal={pal}
+                      title={`${label} · ${payload[0].payload.th}`}
+                      rows={[
+                        ["Current", payload[0].payload.cur, payload[0].payload.cur < FIVE_S_TARGET ? pal.amber : pal.blue],
+                        ["Previous", payload[0].payload.prev, pal.prev],
+                        ["Change", signed(payload[0].payload.cur - payload[0].payload.prev, 0)],
+                      ]}
+                    />
+                  ) : null
+                }
+              />
+              <ReferenceLine x={FIVE_S_TARGET} stroke={pal.target} strokeDasharray="4 4" />
+              <Bar dataKey="prev" name="Previous audit" fill={pal.prev} radius={[0, 3, 3, 0]} barSize={7} isAnimationActive={false} />
+              <Bar dataKey="cur" name="Current audit" radius={[0, 3, 3, 0]} barSize={11} isAnimationActive={false}>
+                {data.map((d) => (
+                  <Cell key={d.zone} fill={d.cur < FIVE_S_TARGET ? pal.amber : pal.blue} fillOpacity={d.zone === sel.zone ? 1 : 0.62} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="min-w-0 rounded-lg bg-slate-50 p-4 dark:bg-slate-800/50">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Zone detail</p>
+          <div className="mt-1 flex items-baseline justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-slate-900 dark:text-slate-100">{sel.zone}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{sel.th} · audited {sel.audited}</p>
+            </div>
+            <span className={`text-2xl font-semibold tabular-nums ${selScore < FIVE_S_TARGET ? "text-amber-600 dark:text-amber-400" : "text-blue-600 dark:text-blue-400"}`}>{selScore}</span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {signed(selScore - sel.prev, 0)} vs previous audit ({sel.prev})
+          </p>
+          <ul className="mt-4 space-y-2.5">
+            {PILLARS.map((p, i) => {
+              const v = sel.pillars[i];
+              const weak = v < FIVE_S_TARGET;
+              return (
+                <li key={p.en}>
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="text-slate-700 dark:text-slate-300">
+                      {p.th} <span className="text-slate-400 dark:text-slate-500">· {p.en}</span>
+                    </span>
+                    <span className="font-medium tabular-nums text-slate-900 dark:text-slate-100">{v}</span>
+                  </div>
+                  <div className="relative mt-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
+                    <div className={`h-full rounded-full ${weak ? "bg-amber-500 dark:bg-amber-400" : "bg-blue-600 dark:bg-blue-400"}`} style={{ width: `${((v - 50) / 50) * 100}%` }} />
+                    <div className="absolute -top-0.5 h-2.5 w-px bg-slate-500 dark:bg-slate-400" style={{ left: `${((FIVE_S_TARGET - 50) / 50) * 100}%` }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">Bars start at 50. Tick marks the target of {FIVE_S_TARGET}.</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function HealthCard({ health, pal }) {
+  const [hover, setHover] = useState(null);
+  const totalReg = health.activities.reduce((s, a) => s + a.value, 0);
+  const rate = (health.unique / HEADCOUNT) * 100;
+  const h = hover != null ? health.activities[hover] : null;
+  return (
+    <Card
+      title="NER FOR HEALTH Campaign"
+      th="การมีส่วนร่วมกิจกรรมสุขภาพของพนักงาน"
+      action={<Pill tone={rate >= HEALTH_TARGET ? "good" : "warn"}>Target {HEALTH_TARGET}%</Pill>}
+    >
+      <div className="relative mx-auto h-[210px] max-w-[260px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={health.activities}
+              dataKey="value"
+              nameKey="name"
+              innerRadius="64%"
+              outerRadius="92%"
+              paddingAngle={2}
+              stroke={pal.card}
+              strokeWidth={2}
+              isAnimationActive={false}
+              onMouseEnter={(_, i) => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            >
+              {health.activities.map((a, i) => (
+                <Cell key={a.key} fill={pal.health[i]} fillOpacity={hover == null || hover === i ? 1 : 0.35} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          {h ? (
+            <>
+              <span className="text-2xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{h.value}</span>
+              <span className="max-w-[110px] text-xs leading-tight text-slate-500 dark:text-slate-400">{h.name}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-3xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{rate.toFixed(1)}%</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{health.unique.toLocaleString()} of {HEADCOUNT.toLocaleString()} staff</span>
+            </>
+          )}
+        </div>
+      </div>
+      <ul className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+        {health.activities.map((a, i) => (
+          <li
+            key={a.key}
+            className={`flex items-center gap-3 py-2 transition-opacity ${hover != null && hover !== i ? "opacity-50" : ""}`}
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover(null)}
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: pal.health[i] }} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-slate-800 dark:text-slate-200">{a.name}</span>
+              <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">{a.th}</span>
+            </span>
+            <span className="text-right">
+              <span className="block text-sm font-medium tabular-nums text-slate-900 dark:text-slate-100">{a.value}</span>
+              <span className="block text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{((a.value / totalReg) * 100).toFixed(0)}%</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+        {totalReg.toLocaleString()} registrations · one person can join several activities.
+      </p>
+    </Card>
+  );
+}
+
+function PrCard({ pr, pal }) {
+  const [show, setShow] = useState({ read: true, ack: true });
+  const last = pr.length - 1;
+  const sent = pr.reduce((s, p) => s + p.sent, 0);
+  const avgRead = avg(pr.map((p) => p.read));
+  const gap = pr[last].read - pr[last].ack;
+  const endDot = (color) => (props) =>
+    props.index === last ? (
+      <circle key={`end-${props.index}`} cx={props.cx} cy={props.cy} r={4.5} fill={color} stroke={pal.card} strokeWidth={2} />
+    ) : (
+      <circle key={`pt-${props.index}`} cx={props.cx} cy={props.cy} r={2.5} fill={color} />
+    );
+  const toggle = (k) => setShow((s) => ({ ...s, [k]: !s[k] }));
+  const btn = (k, label, color, dashed) => (
+    <button
+      type="button"
+      onClick={() => toggle(k)}
+      aria-pressed={show[k]}
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+        show[k]
+          ? "border-slate-300 bg-white text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+          : "border-transparent bg-slate-100 text-slate-400 line-through dark:bg-slate-800/50 dark:text-slate-500"
+      }`}
+    >
+      <span className={`inline-block w-3.5 border-t-2 ${dashed ? "border-dashed" : ""}`} style={{ borderColor: color }} />
+      {label}
+    </button>
+  );
+  return (
+    <Card
+      title="Internal PR Reach"
+      th="อัตราการอ่านและรับทราบประกาศภายใน · 6 เดือนล่าสุด"
+      className="lg:col-span-2"
+      action={
+        <div className="flex gap-2">
+          {btn("read", "Read rate", pal.blue)}
+          {btn("ack", "Acknowledged", pal.teal, true)}
+        </div>
+      }
+    >
+      <div className="h-[260px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={pr} margin={{ top: 10, right: 16, left: -12, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={pal.grid} />
+            <XAxis dataKey="m" tick={{ fill: pal.axis, fontSize: 12 }} axisLine={{ stroke: pal.grid }} tickLine={false} />
+            <YAxis domain={[40, 100]} ticks={[40, 50, 60, 70, 80, 90, 100]} unit="%" tick={{ fill: pal.axis, fontSize: 11 }} axisLine={false} tickLine={false} />
+            <ReferenceLine y={READ_TARGET} stroke={pal.target} strokeDasharray="4 4" label={{ value: `Read target ${READ_TARGET}%`, position: "insideTopLeft", fill: pal.axis, fontSize: 11 }} />
+            <Tooltip
+              cursor={{ stroke: pal.slate, strokeDasharray: "3 3" }}
+              content={({ active, payload, label }) =>
+                active && payload && payload.length ? (
+                  <TipBox
+                    pal={pal}
+                    title={label}
+                    rows={[
+                      ["Read rate", `${payload[0].payload.read.toFixed(1)}%`, pal.blue],
+                      ["Acknowledged", `${payload[0].payload.ack.toFixed(1)}%`, pal.teal],
+                      ["Announcements", payload[0].payload.sent],
+                    ]}
+                  />
+                ) : null
+              }
+            />
+            {show.read && <Line type="monotone" dataKey="read" stroke={pal.blue} strokeWidth={2.5} dot={endDot(pal.blue)} activeDot={{ r: 5 }} isAnimationActive={false} />}
+            {show.ack && <Line type="monotone" dataKey="ack" stroke={pal.teal} strokeWidth={2.25} strokeDasharray="6 4" dot={endDot(pal.teal)} activeDot={{ r: 5 }} isAnimationActive={false} />}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3 dark:border-slate-800">
+        {[
+          ["Announcements sent", `${sent}`, "last 6 months"],
+          ["Average read rate", `${avgRead.toFixed(1)}%`, "last 6 months"],
+          ["Read but not acknowledged", `${gap.toFixed(1)} pts`, `${pr[last].m}, this month`],
+        ].map(([k, v, n]) => (
+          <div key={k}>
+            <dt className="text-xs text-slate-500 dark:text-slate-400">{k}</dt>
+            <dd className="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100">{v}</dd>
+            <dd className="text-[11px] text-slate-400 dark:text-slate-500">{n}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  );
+}
+
+function TicketCard({ tickets, pal }) {
+  const st = tickets.status;
+  const total = st.resolved + st.inProgress + st.open + st.escalated;
+  const rate = (st.resolved / total) * 100;
+  const tone = rate >= SLA_TARGET ? "good" : rate >= 75 ? "warn" : "bad";
+  const color = tone === "good" ? pal.emerald : tone === "warn" ? pal.amber : pal.rose;
+  const segments = [
+    ["Resolved", st.resolved, "bg-emerald-500 dark:bg-emerald-400"],
+    ["In progress", st.inProgress, "bg-blue-500 dark:bg-blue-400"],
+    ["Open", st.open, "bg-slate-400 dark:bg-slate-500"],
+    ["Escalated", st.escalated, "bg-rose-500 dark:bg-rose-400"],
+  ];
+  return (
+    <Card
+      title="Welfare & Relations Tickets"
+      th="อัตราการแก้ไขคำร้องและข้อพิพาทของพนักงาน"
+      action={<Pill tone={tone}>{tone === "good" ? "Meets SLA" : "Below SLA"}</Pill>}
+    >
+      <div className="relative mx-auto h-[140px] max-w-[280px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={[{ v: rate }, { v: 100 - rate }]} dataKey="v" startAngle={180} endAngle={0} cx="50%" cy={130} innerRadius={88} outerRadius={112} stroke="none" isAnimationActive={false}>
+              <Cell fill={color} />
+              <Cell fill={pal.track} />
+            </Pie>
+            <Pie data={[{ v: SLA_TARGET - 0.6 }, { v: 1.2 }, { v: 100 - SLA_TARGET - 0.6 }]} dataKey="v" startAngle={180} endAngle={0} cx="50%" cy={130} innerRadius={84} outerRadius={120} stroke="none" isAnimationActive={false}>
+              <Cell fill="transparent" />
+              <Cell fill={pal.target} />
+              <Cell fill="transparent" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center">
+          <span className="text-3xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{rate.toFixed(1)}%</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">resolved · SLA {SLA_TARGET}%</span>
+        </div>
+      </div>
+
+      <div className="mt-5 flex h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="img" aria-label="Ticket status split">
+        {segments.map(([k, v, cls]) => (
+          <div key={k} className={`${cls} h-full transition-[width] duration-500`} style={{ width: `${(v / total) * 100}%` }} />
+        ))}
+      </div>
+      <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+        {segments.map(([k, v, cls]) => (
+          <li key={k} className="flex items-center justify-between gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <span className={`h-2 w-2 rounded-full ${cls}`} />
+              {k}
+            </span>
+            <span className="font-medium tabular-nums text-slate-900 dark:text-slate-100">{v}</span>
+          </li>
+        ))}
+      </ul>
+      <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div>
+          <dt className="text-xs text-slate-500 dark:text-slate-400">Avg. time to resolve</dt>
+          <dd className="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100">{tickets.avgDays.toFixed(1)} days</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 dark:text-slate-400">Backlog</dt>
+          <dd className="text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100">{st.open + st.inProgress + st.escalated} open</dd>
+        </div>
+      </dl>
+    </Card>
+  );
+}
+
+function CategoryCard({ cats }) {
+  return (
+    <Card title="Tickets by Category" th="คำร้องแยกตามประเภท · แก้ไขแล้ว / ทั้งหมด">
+      <ul className="space-y-3.5">
+        {cats.map((c) => {
+          const pct = (c.resolved / c.total) * 100;
+          const bar = pct >= SLA_TARGET ? "bg-emerald-500 dark:bg-emerald-400" : pct >= 75 ? "bg-amber-500 dark:bg-amber-400" : "bg-rose-500 dark:bg-rose-400";
+          return (
+            <li key={c.name}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-slate-800 dark:text-slate-200">{c.name}</span>
+                  <span className="block truncate text-[11px] text-slate-400 dark:text-slate-500">{c.th}</span>
+                </span>
+                <span className="shrink-0 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">{c.resolved}</span> / {c.total} · {pct.toFixed(0)}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800">
+                <div className={`h-full rounded-full ${bar} transition-[width] duration-500`} style={{ width: `${pct}%` }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
+function FeedCard({ feed, live, onToggle, secondsAgo }) {
+  return (
+    <Card
+      title="Live Activity"
+      th="ความเคลื่อนไหวล่าสุดจากทุกช่องทาง"
+      className="lg:col-span-2"
+      action={
+        <div className="flex items-center gap-3">
+          <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">Updated {secondsAgo}s ago</span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {live ? "Pause feed" : "Resume feed"}
+          </button>
+        </div>
+      }
+    >
+      <ol className="divide-y divide-slate-100 dark:divide-slate-800">
+        {feed.map((f) => {
+          const k = FEED_STYLES[f.kind];
+          return (
+            <li key={f.id} className="kpi-feed-in flex items-center gap-3 py-2">
+              <time className="w-[4.5rem] shrink-0 font-mono text-xs tabular-nums text-slate-400 dark:text-slate-500">{fmtTime(f.t)}</time>
+              <span className={`w-[4.75rem] shrink-0 rounded-full px-2 py-0.5 text-center text-[11px] font-medium ring-1 ring-inset ${k.cls}`}>{k.label}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-300">{f.text}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </Card>
+  );
+}
+
+function ExportDialog({ csv, onClose }) {
+  const ref = useRef(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const copy = () => {
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    const fallback = () => {
+      ref.current?.select();
+      try {
+        if (document.execCommand("copy")) done();
+      } catch (_) {}
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(csv).then(done, fallback);
+    else fallback();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-title"
+        className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="export-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">Export snapshot</h2>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Copy the CSV and paste it into Excel or Google Sheets. Values are frozen at the moment you opened this.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+            <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+          </button>
+        </div>
+        <textarea
+          id="export-csv"
+          ref={ref}
+          readOnly
+          value={csv}
+          className="mt-4 h-64 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
+            Close
+          </button>
+          <button type="button" onClick={copy} className="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:bg-blue-500 dark:hover:bg-blue-400 dark:focus-visible:ring-offset-slate-900">
+            {copied ? "Copied" : "Copy CSV"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- page ----------
+
+const gutter = { paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" };
+
+export default function KpiDashboard() {
+  const dark = useDarkMode();
+  const pal = dark ? PALETTES.dark : PALETTES.light;
+  const [state, setState] = useState(initState);
+  const [live, setLive] = useState(true);
+  const [now, setNow] = useState(() => new Date());
+  const [selZone, setSelZone] = useState("Maintenance");
+  const [exportCsv, setExportCsv] = useState(null);
+
+  useEffect(() => {
+    if (!document.getElementById("kpi-fonts")) {
+      const link = document.createElement("link");
+      link.id = "kpi-fonts";
+      link.rel = "stylesheet";
+      link.href = "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap";
+      document.head.appendChild(link);
+    }
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!live) return undefined;
+    const id = setInterval(() => {
+      const ev = randomEvent();
+      const t = new Date();
+      setState((s) => applyEvent(s, ev, t));
+    }, TICK_MS);
+    return () => clearInterval(id);
+  }, [live]);
+
+  const snap = useMemo(() => snapshot(state), [state]);
+  const prevFiveS = avg(state.zones.map((z) => z.prev));
+  const prevRead = state.pr[state.pr.length - 2].read;
+  const secondsAgo = Math.max(0, Math.round((now - state.updatedAt) / 1000));
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100" style={{ fontFamily: "'IBM Plex Sans', 'IBM Plex Sans Thai', system-ui, -apple-system, 'Segoe UI', sans-serif" }}>
+      <style>{`
+        @media (prefers-reduced-motion: no-preference) {
+          .kpi-feed-in { animation: kpiFeedIn .45s ease-out both; }
+          @keyframes kpiFeedIn { from { opacity: .2; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+        }
+        .font-mono { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      `}</style>
+
+      <header className="sticky z-40 border-b border-slate-200 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85" style={{ top: "env(safe-area-inset-top, 0px)" }}>
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-x-6 gap-y-3 py-3" style={gutter}>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-600 text-white dark:bg-blue-500" aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" />
+                <path d="M7 15l4-4 3 3 5-6" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold leading-tight text-slate-900 [text-wrap:balance] sm:text-lg dark:text-slate-50">Internal Comms &amp; Employee Relations Dashboard</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">ฝ่ายสื่อสารองค์กรและแรงงานสัมพันธ์ · mock data</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setLive((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                live
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30"
+                  : "bg-slate-100 text-slate-600 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-500/30"
+              }`}
+              title={live ? "Pause the live feed" : "Resume the live feed"}
+            >
+              <span className="relative flex h-2 w-2">
+                {live && <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75 motion-safe:animate-ping" />}
+                <span className={`relative inline-flex h-2 w-2 rounded-full ${live ? "bg-emerald-500" : "bg-slate-400"}`} />
+              </span>
+              {live ? "LIVE" : "PAUSED"}
+            </button>
+            <div className="text-right leading-tight">
+              <div className="font-mono text-sm font-medium tabular-nums text-slate-900 dark:text-slate-100">{fmtTime(now)}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">{now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExportCsv(buildCsv(state, new Date()))}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:bg-blue-500 dark:hover:bg-blue-400 dark:focus-visible:ring-offset-slate-950"
+            >
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+                <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.69L6.53 8.72a.75.75 0 0 0-1.06 1.06l4 4a.75.75 0 0 0 1.06 0l4-4a.75.75 0 1 0-1.06-1.06l-2.72 2.72V2.75Z" />
+                <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+              </svg>
+              Export
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1400px] py-5 sm:py-6" style={gutter}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="5S Average Score"
+            th="คะแนนเฉลี่ย 5ส ทุกพื้นที่"
+            value={snap.fiveS.toFixed(1)}
+            unit="/ 100"
+            delta={snap.fiveS - prevFiveS}
+            deltaNote="vs previous audit"
+            status={snap.fiveS >= FIVE_S_TARGET ? { tone: "good", text: "On target" } : { tone: "warn", text: `Target ${FIVE_S_TARGET}` }}
+            history={state.history}
+            dataKey="fiveS"
+            color={pal.blue}
+          />
+          <KpiCard
+            label="Announcement Read Rate"
+            th={`อัตราการอ่านประกาศ · ${state.pr[state.pr.length - 1].m}`}
+            value={snap.read.toFixed(1)}
+            unit="%"
+            delta={snap.read - prevRead}
+            deltaNote="vs last month"
+            status={snap.read >= READ_TARGET ? { tone: "good", text: "On target" } : { tone: "warn", text: `Target ${READ_TARGET}%` }}
+            history={state.history}
+            dataKey="read"
+            color={pal.blue}
+          />
+          <KpiCard
+            label="Health Participation"
+            th="NER FOR HEALTH · ผู้เข้าร่วม"
+            value={snap.health.toFixed(1)}
+            unit="%"
+            delta={snap.health - HEALTH_LAST_MONTH}
+            deltaNote="vs last month"
+            status={snap.health >= HEALTH_TARGET ? { tone: "good", text: "On target" } : { tone: "warn", text: `Target ${HEALTH_TARGET}%` }}
+            history={state.history}
+            dataKey="health"
+            color={pal.emerald}
+          />
+          <KpiCard
+            label="Ticket Resolution"
+            th="อัตราการแก้ไขคำร้อง"
+            value={snap.resolution.toFixed(1)}
+            unit="%"
+            delta={snap.resolution - SLA_TARGET}
+            deltaNote={`vs SLA ${SLA_TARGET}%`}
+            status={snap.resolution >= SLA_TARGET ? { tone: "good", text: "Meets SLA" } : snap.resolution >= 75 ? { tone: "warn", text: "Below SLA" } : { tone: "bad", text: "At risk" }}
+            history={state.history}
+            dataKey="resolution"
+            color={snap.resolution >= SLA_TARGET ? pal.emerald : pal.amber}
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <FiveSCard zones={state.zones} pal={pal} selected={selZone} onSelect={setSelZone} />
+          <HealthCard health={state.health} pal={pal} />
+          <PrCard pr={state.pr} pal={pal} />
+          <TicketCard tickets={state.tickets} pal={pal} />
+          <FeedCard feed={state.feed} live={live} onToggle={() => setLive((v) => !v)} secondsAgo={secondsAgo} />
+          <CategoryCard cats={state.tickets.cats} />
+        </div>
+
+        <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
+          All figures are sample data. The feed simulates a new event every {TICK_MS / 1000} seconds. Headcount {HEADCOUNT.toLocaleString()}.
+        </p>
+      </main>
+
+      {exportCsv && <ExportDialog csv={exportCsv} onClose={() => setExportCsv(null)} />}
+    </div>
+  );
+}
