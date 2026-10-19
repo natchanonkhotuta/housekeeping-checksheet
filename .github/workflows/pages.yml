@@ -23,9 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # รวมไฟล์เป็นเวอร์ชันเดียวจบไว้ให้ดาวน์โหลดจากหน้าเว็บด้วย
-      - name: Build single-file bundles
-        run: bash build.sh
+      # เขียน assets/config.js จาก Secrets แล้วรวมไฟล์เวอร์ชันเดียวจบ
+      # ตั้ง Secrets ที่ Settings → Secrets and variables → Actions
+      #   SUPABASE_URL · SUPABASE_ANON_KEY  (ไม่ตั้ง = แอปทำงานแบบเก็บในเครื่อง)
+      - name: Build (inject config + bundles)
+        run: bash netlify-build.sh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_TABLE: ${{ secrets.SUPABASE_TABLE }}
 
       - uses: actions/configure-pages@v5
 
