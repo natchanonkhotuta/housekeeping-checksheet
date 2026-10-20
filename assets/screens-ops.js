@@ -72,8 +72,6 @@ SCREENS.dashboard = async function(v){
         : '<div class="empty">ไม่มีแม่บ้านหยุดในวันนี้</div>')
     + '</div></div>'
     + '<div class="card"><h2>ทางลัด</h2><div class="row">'
-    +   (canRoute('verify') ? '<button class="btn primary" id="scToday">🔍 ตรวจงานของวันนี้</button>'
-    +                         '<button class="btn" id="scWeek">🔍 ตรวจงานสัปดาห์นี้</button>' : '')
     +   (canRoute('keyin')  ? '<button class="btn" id="scKeyin">⌨️ คีย์ผลจากกระดาษ</button>' : '')
     +   (canRoute('scan')   ? '<button class="btn" data-go="scan">📷 สแกนใบเช็คงาน</button>' : '')
     +   (canRoute('assign') ? '<button class="btn" data-go="assign">ไปหน้ามอบหมายงาน</button>' : '')
@@ -85,16 +83,6 @@ SCREENS.dashboard = async function(v){
   bindCyclePicker('db', renderRoute);
   $$('[data-go]', v).forEach(b=> b.onclick = ()=> go(b.dataset.go));
 
-  const gotoVerify = (scope)=>{
-    const t2 = todayParts();
-    const cv = cycleOfDate(t2.y, t2.m, t2.d);
-    state.ui.cy = cv.y; state.ui.cm = cv.m;
-    state.ui.vfIso = ymd(t2.y, t2.m, t2.d);
-    state.ui.vfScope = scope; state.ui.vfShow = 'todo'; state.ui.vfStaff = '';
-    go('verify');
-  };
-  if($('#scToday')) $('#scToday').onclick = ()=> gotoVerify('day');
-  if($('#scWeek'))  $('#scWeek').onclick  = ()=> gotoVerify('week');
   if($('#scKeyin')) $('#scKeyin').onclick = ()=>{
     const t3 = todayParts();
     const ck = cycleOfDate(t3.y, t3.m, t3.d);

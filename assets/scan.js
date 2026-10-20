@@ -642,17 +642,9 @@ function renderScanSummary(d, nDone, nClear){
         : '<div class="empty">ทำครบทุกงาน 🎉</div>')
     + '</div></div>'
     + '<div class="row" style="margin-top:.8rem">'
-    +   (canRoute('verify') ? '<button class="btn" id="sumVerify">ไปหน้าตรวจสอบของวันนี้</button>' : '')
     +   (canRoute('keyin')  ? '<button class="btn" id="sumKeyin">เปิดตารางคีย์มือของวันนี้</button>' : '')
     + '</div></div>';
 
-  if($('#sumVerify')) $('#sumVerify').onclick = ()=>{
-    const cv = cycleOfDate(d.y, d.m, d.day);
-    state.ui.cy = cv.y; state.ui.cm = cv.m;
-    state.ui.vfIso = ymd(d.y, d.m, d.day);
-    state.ui.vfScope = 'day'; state.ui.vfShow = 'all'; state.ui.areaId = d.area.id;
-    go('verify');
-  };
   if($('#sumKeyin')) $('#sumKeyin').onclick = ()=>{
     const ck = cycleOfDate(d.y, d.m, d.day);
     state.ui.cy = ck.y; state.ui.cm = ck.m;

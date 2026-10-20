@@ -26,9 +26,6 @@ SCREENS.staffmonth = async function(v){
     + '<div class="toolbar">'+cyclePicker('sm')
     +   '<div class="field" style="min-width:180px"><label>แม่บ้าน</label><select id="smStaff">'
     +     selOptions(D.staffAll(false),'id','name', pick, '— ทุกคน —')+'</select></div>'
-    +   (canRoute('dailylog')
-        ? '<div class="field"><label>&nbsp;</label>'
-          + '<button class="btn" id="smEdit">📓 ไปแก้บันทึกประจำวัน</button></div>' : '')
     + '</div>'
 
     + '<div class="card" style="padding:.7rem .9rem"><div class="hint">'
@@ -48,7 +45,6 @@ SCREENS.staffmonth = async function(v){
 
   bindCyclePicker('sm', renderRoute);
   $('#smStaff').onchange = e=>{ state.ui.smStaff = e.target.value; renderRoute(); };
-  if($('#smEdit')) $('#smEdit').onclick = ()=> go('dailylog');
   $('#smPrint').onclick = ()=> printStaffMonth(shown, y, m);
   $('#smXlsx').onclick  = ()=> exportStaffMonthExcel(shown, y, m);
 };

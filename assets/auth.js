@@ -42,7 +42,7 @@ function renderLogin(msg){
 /** หน้าจอแรกที่บทบาทนี้เปิดได้ */
 function firstAllowedRoute(){
   if(state.session.role === 'staff' && canRoute('mywork')) return 'mywork';
-  const order = ['dashboard','mywork','keyin','verify','assign','print','report','scan','settings'];
+  const order = ['dashboard','mywork','keyin','assign','print','report','scan','settings'];
   for(const r of order) if(canRoute(r)) return r;
   return 'dashboard';
 }

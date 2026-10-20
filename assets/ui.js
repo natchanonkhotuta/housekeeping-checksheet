@@ -16,8 +16,6 @@ const NAV = [
     { id:'keyin',    ic:'⌨️', label:'บันทึกผลจากกระดาษ' },
     { id:'scan',     ic:'📷', label:'สแกนใบเช็คงาน' },
     { id:'roster',   ic:'🗓️', label:'ตารางกะ' },
-    { id:'dailylog', ic:'📓', label:'บันทึกประจำวัน' },
-    { id:'verify',   ic:'🔍', label:'ตรวจสอบและอนุมัติ' },
     { id:'print',  ic:'🖨️', label:'พิมพ์ / ส่งออก CHECK SHEET' }
   ]},
   { grp:'ข้อมูลหลัก', items:[
@@ -102,6 +100,11 @@ const SCREENS = {};
 
 async function renderRoute(){
   const v = $('#view'); if(!v) return;
+  // หน้าจอที่ถูกยกเลิกไปแล้ว (เช่นลิงก์เก่าที่บุ๊กมาร์กไว้) — พากลับแดชบอร์ด
+  if(!ROUTE_PERMS[state.route]){
+    state.route = 'dashboard';
+    renderShell();
+  }
   if(!canRoute(state.route)){
     v.innerHTML = '<div class="card"><div class="empty">🚫 บัญชีของคุณไม่มีสิทธิ์เข้าหน้าจอนี้'
       + '<div class="hint" style="margin-top:.4rem">สิทธิ์ปัจจุบัน: '

@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.9.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -62,11 +62,11 @@ const ROLES = {
    --------------------------------------------------------------- */
 const PERMS = {
   admin:      ['*'],
-  supervisor: ['dashboard','mywork','assign','verify','keyin','scan','dailylog','roster','print','report',
+  supervisor: ['dashboard','mywork','assign','keyin','scan','roster','print','report',
                'holiday','check.any','staff.view','area.view','taskdef.view','shift.view'],
-  manager:    ['dashboard','verify.approve','print','report',
+  manager:    ['dashboard','print','report',
                'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
-  recorder:   ['dashboard','keyin','scan','dailylog','print','report',
+  recorder:   ['dashboard','keyin','scan','print','report',
                'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
   staff:      ['dashboard','mywork','check.self','print.self','holiday.view']
 };
@@ -80,9 +80,7 @@ const ROUTE_PERMS = {
   scan:      ['scan'],
   roster:    ['roster'],
   shifts:    ['shift','shift.view'],
-  dailylog:  ['dailylog'],
   staffmonth:['report'],
-  verify:    ['verify','verify.approve'],
   print:     ['print','print.self'],
   staff:     ['staff','staff.view'],
   areas:     ['area','area.view'],
@@ -93,7 +91,7 @@ const ROUTE_PERMS = {
   settings:  ['settings']
 };
 
-/** ตรวจสิทธิ์แบบตรงตัว (รองรับ * และการสืบทอดจากรากสิทธิ์ เช่น 'verify' ครอบคลุม 'verify.approve') */
+/** ตรวจสิทธิ์แบบตรงตัว (รองรับ * และการสืบทอดจากรากสิทธิ์ เช่น 'staff' ครอบคลุม 'staff.view') */
 function can(perm){
   const u = state.session; if(!u) return false;
   const list = PERMS[u.role] || [];
