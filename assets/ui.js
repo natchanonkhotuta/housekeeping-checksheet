@@ -320,3 +320,42 @@ function showAccountMenu(){
     }
   });
 }
+
+/* ---------------------------------------------------------------
+   8. ช่องเลือกสี — เลือกจากสีสำเร็จรูป หรือกดเลือกสีเองก็ได้
+   --------------------------------------------------------------- */
+function colorField(idPrefix, label, current, hint){
+  const custom = isHexColor(current);
+  const presets = Object.keys(HL_COLORS).map(k=>
+    '<option value="'+k+'"'+((!custom && (current||'') === k) ? ' selected' : '')+'>'
+    + esc(HL_COLORS[k].label)+'</option>').join('');
+  return '<div class="field"><label>'+label+'</label>'
+    + '<div class="row" style="align-items:center;gap:.4rem">'
+    +   '<select id="'+idPrefix+'Sel" style="flex:1">'+presets
+    +     '<option value="__custom"'+(custom ? ' selected' : '')+'>🎨 เลือกสีเอง…</option></select>'
+    +   '<input type="color" id="'+idPrefix+'Hex" value="'+(custom ? current : '#ffd43b')+'"'
+    +     ' style="width:52px;height:38px;padding:2px;cursor:pointer"'+(custom ? '' : ' disabled')+'>'
+    +   '<span class="pill" id="'+idPrefix+'Prev" style="min-width:64px;text-align:center">ตัวอย่าง</span>'
+    + '</div>'
+    + (hint ? '<span class="hint">'+hint+'</span>' : '')
+    + '</div>';
+}
+function bindColorField(idPrefix){
+  const sel = $('#'+idPrefix+'Sel'), hex = $('#'+idPrefix+'Hex'), prev = $('#'+idPrefix+'Prev');
+  if(!sel) return;
+  const upd = ()=>{
+    const custom = (sel.value === '__custom');
+    hex.disabled = !custom;
+    const c = custom ? hex.value : sel.value;
+    prev.className = 'pill ' + hlCls(c);
+    prev.setAttribute('style', hlCss(c) + 'min-width:64px;text-align:center');
+  };
+  sel.onchange = upd;
+  hex.oninput  = upd;
+  upd();
+}
+function colorFieldValue(idPrefix){
+  const sel = $('#'+idPrefix+'Sel');
+  if(!sel) return '';
+  return (sel.value === '__custom') ? $('#'+idPrefix+'Hex').value : sel.value;
+}

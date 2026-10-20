@@ -463,30 +463,66 @@ const HL_COLORS = {
   'purple': { label:'ม่วง',     bg:'#eeedfe', fg:'#3c3489', pbg:'#7048e8', pfg:'#ffffff' }
 };
 
+/* ---------- สีที่ผู้ใช้เลือกเอง ----------
+   ค่าสีเก็บได้ 2 แบบ: ชื่อสีสำเร็จรูป ('red') หรือรหัสสีที่เลือกเอง ('#ff8800') */
+function isHexColor(c){ return /^#[0-9a-fA-F]{6}$/.test(String(c || '')); }
+
+/** ตัวหนังสือควรเป็นขาวหรือดำบนพื้นสีนี้ — คิดจากความสว่างของสี */
+function readableOn(hex){
+  if(!isHexColor(hex)) return '#000000';
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return (0.299*r + 0.587*g + 0.114*b) > 150 ? '#1a1a1a' : '#ffffff';
+}
+
+/** คลาสสีสำหรับหน้าจอ (เฉพาะสีสำเร็จรูป) */
+function hlCls(c){ return (c && !isHexColor(c) && HL_COLORS[c]) ? 'hl-'+c : ''; }
+/** สไตล์สีสำหรับหน้าจอ (เฉพาะสีที่เลือกเอง) — ต่อท้าย style เดิมได้เลย */
+function hlCss(c){
+  return isHexColor(c) ? 'background:'+c+';color:'+readableOn(c)+';font-weight:700;' : '';
+}
+/** ชื่อสีที่แสดงให้ผู้ใช้เห็น */
+function hlLabel(c){
+  if(isHexColor(c)) return c.toUpperCase();
+  return HL_COLORS[c] ? HL_COLORS[c].label : '';
+}
+
 /** สีสำหรับระบายเต็มช่องในใบพิมพ์ */
 function printFill(hl){
+  if(isHexColor(hl)) return { bg: hl, fg: readableOn(hl) };
   const c = HL_COLORS[hl] || HL_COLORS[''];
   return { bg: c.pbg, fg: c.pfg };
 }
 
-/** สีของช่องวันหยุด/วันลาในใบพิมพ์ — แยกตามเหตุที่หยุด */
-const OFF_FILL = {
-  W: { bg:'#e03131', fg:'#ffffff', label:'วันหยุดประจำสัปดาห์' },
-  H: { bg:'#a61e1e', fg:'#ffffff', label:'วันหยุดประจำปีบริษัท' },
-  V: { bg:'#868e96', fg:'#ffffff', label:'ลาพักร้อน' },
-  S: { bg:'#868e96', fg:'#ffffff', label:'ลาป่วย' },
-  P: { bg:'#868e96', fg:'#ffffff', label:'ลากิจ' },
-  M: { bg:'#868e96', fg:'#ffffff', label:'ลาคลอด' },
-  C: { bg:'#868e96', fg:'#ffffff', label:'หยุดชดเชย' },
-  A: { bg:'#868e96', fg:'#ffffff', label:'ขาดงาน' },
-  L: { bg:'#868e96', fg:'#ffffff', label:'ลาอื่น ๆ' }
+/** ชื่อเต็มของตัวอักษรวันหยุด/วันลา */
+const OFF_LABELS = {
+  W:'วันหยุดประจำสัปดาห์', H:'วันหยุดประจำปีบริษัท', V:'ลาพักร้อน', S:'ลาป่วย',
+  P:'ลากิจ', M:'ลาคลอด', C:'หยุดชดเชย', A:'ขาดงาน', L:'ลาอื่น ๆ'
 };
+/** สีเริ่มต้นของวันหยุด/วันลา — ผู้ใช้เปลี่ยนได้ที่หน้ากะการทำงาน */
+const OFF_DEFAULT = { W:'#e03131', H:'#a61e1e', L:'#868e96' };
+/** วันหยุดแบ่งเป็น 3 กลุ่มสี: หยุดประจำสัปดาห์ · หยุดบริษัท · วันลาทุกชนิด */
+function offGroup(mk){ return (mk === 'W' || mk === 'H') ? mk : 'L'; }
+function offColor(mk){
+  const c = (state.data.offColors || {})[offGroup(mk)];
+  return isHexColor(c) ? c : OFF_DEFAULT[offGroup(mk)];
+}
+function offFill(mk){
+  const bg = offColor(mk);
+  return { bg, fg: readableOn(bg), label: OFF_LABELS[mk] || 'วันหยุด' };
+}
+async function setOffColor(grp, hex){
+  if(!isHexColor(hex)) return false;
+  state.data.offColors = state.data.offColors || {};
+  state.data.offColors[grp] = hex;
+  await saveMaster('เปลี่ยนสี'+(OFF_LABELS[grp] || grp));
+  return true;
+}
 
 /** สีเน้นของพื้นที่ ('' = ไม่เน้น) */
 function areaHighlight(areaId){
   const a = D.area(areaId);
   const hl = a && a.hl ? String(a.hl) : '';
-  return HL_COLORS[hl] ? hl : '';
+  return (isHexColor(hl) || HL_COLORS[hl]) ? hl : '';
 }
 /** กะนี้ให้แสดงสีเน้นหรือไม่ */
 function shiftShowsColor(shiftId){
@@ -497,7 +533,7 @@ function shiftShowsColor(shiftId){
 function shiftColor(shiftId){
   const s = shiftById(shiftId);
   const c = s && s.color ? String(s.color) : '';
-  return HL_COLORS[c] ? c : '';
+  return (isHexColor(c) || HL_COLORS[c]) ? c : '';
 }
 /** สีของช่องตารางกะหนึ่งพื้นที่ — คืน '' เมื่อไม่ต้องเน้น */
 function rosterCellColor(shiftId, areaId){
@@ -802,7 +838,8 @@ function dutyList(){ return state.data.duties || []; }
 function dutyById(id){ return dutyList().find(d=> d.id === id) || null; }
 function dutyColor(id){
   const d = dutyById(id);
-  return (d && d.hl && HL_COLORS[d.hl]) ? d.hl : '';
+  const c = (d && d.hl) ? String(d.hl) : '';
+  return (isHexColor(c) || HL_COLORS[c]) ? c : '';
 }
 /** ภารกิจพิเศษของช่องนั้น ถ้ามี */
 function rosterDuty(rec){

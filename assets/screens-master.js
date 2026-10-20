@@ -28,8 +28,8 @@ SCREENS.areas = async function(v){
         return '<tr>'
           + '<td class="num">'+a.order+'</td>'
           + '<td><span class="pill">'+esc(a.code)+'</span></td>'
-          + '<td class="num"><b class="'+(a.hl ? 'hl-'+esc(a.hl) : '')
-          + '" style="font-size:1.05rem;padding:0 .3rem;border-radius:4px">'
+          + '<td class="num"><b class="'+hlCls(a.hl)
+          + '" style="'+hlCss(a.hl)+'font-size:1.05rem;padding:0 .3rem;border-radius:4px">'
           + esc(areaShort(a.id))+'</b>'
           + (a.sc ? '' : '<div class="hint" style="font-size:.7rem">อัตโนมัติ</div>')+'</td>'
           + '<td><b>'+esc(a.name)+'</b>'+(a.note?'<div class="hint">'+esc(a.note)+'</div>':'')+'</td>'
@@ -85,10 +85,8 @@ function areaDialog(area){
       +   '<input id="fSc" value="'+esc(a.sc||'')+'" placeholder="เช่น 4" maxlength="4">'
       +   '<span class="hint">เลขสั้น ๆ ที่ใช้แทนตึกนี้ — ชั้น 4 ใส่ 4 · '
       +   'เว้นว่าง = ระบบเลือกให้</span></div>'
-      + '<div class="field"><label>สีเน้นในตารางกะ</label><select id="fHl">'
-      +   Object.keys(HL_COLORS).map(k=>'<option value="'+k+'"'
-          + ((a.hl||'')===k?' selected':'')+'>'+esc(HL_COLORS[k].label)+'</option>').join('')
-      +   '</select><span class="hint">แสดงเฉพาะกะที่ตั้งค่าว่า “แสดงสีเน้น”</span></div></div>'
+      + colorField('fHlC', 'สีเน้นในตารางกะ', a.hl||'',
+          'ใช้เน้นเฉพาะตึกที่อยากให้สังเกตเห็นง่าย') + '</div>'
       + '<div class="field"><label>หมายเหตุ</label><input id="fNote" value="'+esc(a.note||'')+'"></div>'
       + '<div class="field"><label>ลำดับการแสดงผล</label>'
       +   '<input type="number" id="fOrder" value="'+a.order+'" min="1"></div>'
@@ -105,7 +103,7 @@ function areaDialog(area){
           if(sc && D.areas(false).some(x=> String(x.sc||'').trim() === sc && x.id !== a.id)){
             toast('เลขย่อนี้ซ้ำกับพื้นที่อื่น — รายงานจะแยกตึกไม่ออก','err'); return;
           }
-          Object.assign(a, { code, name, sc, hl:$('#fHl').value, note:$('#fNote').value.trim(),
+          Object.assign(a, { code, name, sc, hl:colorFieldValue('fHlC'), note:$('#fNote').value.trim(),
                              order: clampInt($('#fOrder').value,1,999), active: $('#fActive').checked });
           if(isNew) state.data.areas.push(a);
           await saveMaster((isNew?'เพิ่ม':'แก้ไข')+'พื้นที่ '+name);
@@ -113,7 +111,7 @@ function areaDialog(area){
         }},
       { label:'ยกเลิก', onClick: closeModal }
     ],
-    onOpen: ()=> bindChkStyle()
+    onOpen: ()=>{ bindChkStyle(); bindColorField('fHlC'); }
   });
 }
 

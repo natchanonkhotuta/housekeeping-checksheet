@@ -35,10 +35,10 @@ SCREENS.roster = async function(v){
     work += t.work; off += t.off; duty += t.duty;
   });
 
-  const toolBtn = (kind, id, label, extraCls)=>
-    '<button class="btn sm '+(extraCls||'')
+  const toolBtn = (kind, id, label, color)=>
+    '<button class="btn sm '+hlCls(color)
     + (RS.tool.kind === kind && RS.tool.id === id ? ' primary' : '')
-    + '" data-tool="'+kind+'" data-id="'+esc(id||'')+'">'+label+'</button>';
+    + '" style="'+hlCss(color)+'" data-tool="'+kind+'" data-id="'+esc(id||'')+'">'+label+'</button>';
 
   v.innerHTML =
     '<div class="page-head"><h1>🗓️ ตารางกะ</h1><span class="sp"></span>'
@@ -75,11 +75,11 @@ SCREENS.roster = async function(v){
         +   '<span class="hint" style="min-width:74px">1. กะ</span>'
         +   shifts.map(s=> toolBtn('shift', s.id, esc(s.code)+' · '+esc(s.name)
               + ' <span class="hint">'+esc(s.start)+'–'+esc(s.end)+'</span>',
-              shiftColor(s.id) ? 'hl-'+shiftColor(s.id) : '')).join(' ')
+              shiftColor(s.id))).join(' ')
         +   toolBtn('off','','ห · วันหยุด')
         +   dutyList().map(d=> toolBtn('duty', d.id,
               esc(d.code)+' · '+esc(d.name)+' <span class="hint">ไม่ติดตามงาน</span>',
-              dutyColor(d.id) ? 'hl-'+dutyColor(d.id) : '')).join(' ')
+              dutyColor(d.id))).join(' ')
         +   toolBtn('clear','','ล้างช่อง')
         + '</div>'
         + '<div class="row" style="align-items:center;margin-top:.4rem">'
@@ -87,7 +87,7 @@ SCREENS.roster = async function(v){
         +   areas.map(a=>{
               const hl = areaHighlight(a.id);
               return toolBtn('area', a.id,
-                esc(areaShort(a.id))+' '+esc(a.name), hl ? 'hl-'+hl : '');
+                esc(areaShort(a.id))+' '+esc(a.name), hl);
             }).join(' ')
         + '</div>'
         + '<div class="hint" style="margin-top:.4rem">เลือกเครื่องมือด้านบน แล้วคลิกช่องในตาราง · '
@@ -112,12 +112,12 @@ SCREENS.roster = async function(v){
     + '<div class="card" style="margin-top:.6rem;padding:.6rem .9rem"><div class="hint">'
     +   '<b>กะ</b> — '+shifts.map(s=>{
           const c = shiftColor(s.id);
-          return '<span class="pill'+(c?' hl-'+c:'')+'">'+esc(s.code)+' = '+esc(s.name)
+          return '<span class="pill '+hlCls(c)+'" style="'+hlCss(c)+'">'+esc(s.code)+' = '+esc(s.name)
             + ' '+esc(s.start)+'–'+esc(s.end)+'</span>';
         }).join(' ')
     +   '<br><b>พื้นที่</b> — '+areas.map(a=>{
           const hl = areaHighlight(a.id);
-          return '<span class="pill'+(hl?' hl-'+hl:'')+'">'+esc(areaShort(a.id))+' = '
+          return '<span class="pill '+hlCls(hl)+'" style="'+hlCss(hl)+'">'+esc(areaShort(a.id))+' = '
             + esc(a.name)+'</span>';
         }).join(' ')
     +   '<br>อ่านช่องตาราง: บรรทัดบนคือรหัสกะ บรรทัดล่างคือเลขตึกที่ไปทำวันนั้น '
@@ -264,17 +264,17 @@ function rosterRowHtml(s, days, y, m, editable){
     } else if(duty){
       const dc = dutyColor(duty.id);
       cls = 'off';
-      inner = '<span class="sh'+(dc ? ' hl-'+dc : '')+'">'+esc(duty.code)+'</span>';
+      inner = '<span class="sh '+hlCls(dc)+'" style="'+hlCss(dc)+'">'+esc(duty.code)+'</span>';
       title += ' · '+duty.name+' (ไม่ติดตามงาน)';
     } else if(rec.sh || ars.length){
       const sh = shiftById(rec.sh);
       const shc = shiftColor(rec.sh);
       cls = 'has';
-      inner = '<span class="sh'+(shc ? ' hl-'+shc : '')+'">'+esc(sh ? sh.code : '?')+'</span>'
+      inner = '<span class="sh '+hlCls(shc)+'" style="'+hlCss(shc)+'">'+esc(sh ? sh.code : '?')+'</span>'
         + '<span class="ars">'
         + ars.map(id=>{
             const hl = rosterCellColor(rec.sh, id);
-            return '<span'+(hl ? ' class="hl-'+hl+'"' : '')+'>'+esc(areaShort(id))+'</span>';
+            return '<span class="'+hlCls(hl)+'" style="'+hlCss(hl)+'">'+esc(areaShort(id))+'</span>';
           }).join('')
         + '</span>';
       title += ' · '+(sh ? shiftLabel(sh.id) : 'ไม่ระบุกะ')
@@ -381,7 +381,7 @@ function printRoster(y, m){
           ? ars.map(id=>{
               const hl = areaHighlight(id);
               return hl
-                ? '<span class="hi" style="color:'+HL_COLORS[hl].pbg+'">'+esc(areaShort(id))+'</span>'
+                ? '<span class="hi" style="color:'+printFill(hl).bg+'">'+esc(areaShort(id))+'</span>'
                 : esc(areaShort(id));
             }).join(',')
           : esc((shiftById(rec.sh)||{}).code || '?');
@@ -389,7 +389,7 @@ function printRoster(y, m){
       } else {
         const om = offMarkOf(s.id, dd.iso, !!rec.off);
         if(om){
-          const f = OFF_FILL[om.mk] || OFF_FILL.L;
+          const f = offFill(om.mk);
           style = 'background:'+f.bg+';color:'+f.fg;
           inner = om.mk;
           usedOff[om.mk] = om.label;
@@ -438,7 +438,7 @@ function printRoster(y, m){
           return swatch(f.bg, f.fg, d.code, d.name);
         }).join('')
     +   Object.keys(usedOff).sort().map(mk=>{
-          const f = OFF_FILL[mk] || OFF_FILL.L;
+          const f = offFill(mk);
           return swatch(f.bg, f.fg, mk, usedOff[mk]);
         }).join('')
     + '</div>'
@@ -480,8 +480,8 @@ SCREENS.shifts = async function(v){
     +   (editable ? '<th class="num">จัดการ</th>' : '')
     + '</tr></thead><tbody>'
     + (list.length ? list.map(s=>
-        '<tr><td class="num"><b class="'+(shiftColor(s.id)?'hl-'+shiftColor(s.id):'')
-        + '" style="font-size:1.1rem;padding:0 .35rem;border-radius:4px">'+esc(s.code)+'</b></td>'
+        '<tr><td class="num"><b class="'+hlCls(shiftColor(s.id))
+        + '" style="'+hlCss(shiftColor(s.id))+'font-size:1.1rem;padding:0 .35rem;border-radius:4px">'+esc(s.code)+'</b></td>'
         + '<td><b>'+esc(s.name)+'</b></td>'
         + '<td>'+esc(s.start)+' – '+esc(s.end)+'</td>'
         + '<td class="num">'+(s.hl
@@ -499,8 +499,8 @@ SCREENS.shifts = async function(v){
     +   '— ตั้งสีของแต่ละตึกได้ที่หน้าจัดการพื้นที่</p>'
     +   '<div class="row">'+D.areas(true).map(a=>{
           const hl = areaHighlight(a.id);
-          return '<span class="pill'+(hl?' hl-'+hl:'')+'">'+esc(areaShort(a.id))+' '
-            + esc(a.name)+(hl ? ' · '+HL_COLORS[hl].label : '')+'</span>';
+          return '<span class="pill '+hlCls(hl)+'" style="'+hlCss(hl)+'">'+esc(areaShort(a.id))+' '
+            + esc(a.name)+(hl ? ' · '+esc(hlLabel(hl)) : '')+'</span>';
         }).join(' ')+'</div></div>'
     + '<div class="card" style="margin-top:.7rem"><div class="row" style="align-items:center">'
     +   '<h3 style="margin:0;flex:1">ภารกิจพิเศษ (ไม่ติดตามงาน)</h3>'
@@ -512,11 +512,11 @@ SCREENS.shifts = async function(v){
     +     '<th class="num">สี</th><th>หมายเหตุ</th>'
     +     (editable ? '<th class="num">จัดการ</th>' : '')+'</tr></thead><tbody>'
     +   (dutyList().length ? dutyList().map(d=>
-          '<tr><td class="num"><b class="'+(dutyColor(d.id)?'hl-'+dutyColor(d.id):'')
-          + '" style="font-size:1.1rem;padding:0 .35rem;border-radius:4px">'+esc(d.code)+'</b></td>'
+          '<tr><td class="num"><b class="'+hlCls(dutyColor(d.id))
+          + '" style="'+hlCss(dutyColor(d.id))+'font-size:1.1rem;padding:0 .35rem;border-radius:4px">'+esc(d.code)+'</b></td>'
           + '<td><b>'+esc(d.name)+'</b></td>'
           + '<td class="num">'+(dutyColor(d.id)
-              ? '<span class="pill hl-'+dutyColor(d.id)+'">'+HL_COLORS[dutyColor(d.id)].label+'</span>'
+              ? '<span class="pill '+hlCls(dutyColor(d.id))+'" style="'+hlCss(dutyColor(d.id))+'">'+esc(hlLabel(dutyColor(d.id)))+'</span>'
               : '<span class="hint">—</span>')+'</td>'
           + '<td class="hint">'+esc(d.note||'')+'</td>'
           + (editable ? '<td class="num"><button class="btn sm" data-dedit="'+esc(d.id)+'">แก้ไข</button> '
@@ -524,12 +524,33 @@ SCREENS.shifts = async function(v){
           + '</tr>').join('')
         : '<tr><td colspan="5" class="empty">ยังไม่มีภารกิจพิเศษ</td></tr>')
     +   '</tbody></table></div></div>'
+    + '<div class="card" style="margin-top:.7rem"><h3>สีวันหยุด / วันลา ในใบพิมพ์</h3>'
+    +   '<p class="hint">ใบพิมพ์ตารางกะระบายสีช่องวันหยุดตามเหตุที่หยุด เลือกสีเองได้</p>'
+    +   '<div class="row">'
+    +   [['W','วันหยุดประจำสัปดาห์'],['H','วันหยุดประจำปีบริษัท'],['L','วันลาทุกชนิด']]
+          .map(([g,label])=>{
+            const c = offColor(g);
+            return '<div class="field" style="max-width:220px"><label>'+label+'</label>'
+              + '<div class="row" style="align-items:center;gap:.4rem">'
+              +   '<input type="color" data-off="'+g+'" value="'+c+'"'
+              +     ' style="width:52px;height:38px;padding:2px;cursor:pointer"'
+              +     (editable?'':' disabled')+'>'
+              +   '<span class="pill" style="background:'+c+';color:'+readableOn(c)
+              +     ';font-weight:700;min-width:46px;text-align:center">'+g+'</span>'
+              + '</div></div>';
+          }).join('')
+    +   '</div></div>'
     + (canRoute('roster')
       ? '<div class="row" style="margin-top:.7rem">'
         + '<button class="btn" id="shGoRoster">🗓️ ไปหน้าตารางกะ</button></div>' : '');
 
   if($('#shGoRoster')) $('#shGoRoster').onclick = ()=> go('roster');
   if(!editable) return;
+
+  $$('[data-off]', v).forEach(inp=> inp.onchange = async ()=>{
+    await setOffColor(inp.dataset.off, inp.value);
+    renderRoute(); toast('เปลี่ยนสีแล้ว','ok');
+  });
 
   $('#dtAdd').onclick = ()=> dutyDialog(null);
   $$('[data-dedit]', v).forEach(b=> b.onclick = ()=> dutyDialog(dutyById(b.dataset.dedit)));
@@ -573,11 +594,7 @@ function shiftDialog(sh){
       +   '<input type="time" id="fStart" value="'+esc(s.start)+'"></div>'
       + '<div class="field"><label>เวลาออกงาน</label>'
       +   '<input type="time" id="fEnd" value="'+esc(s.end)+'"></div></div>'
-      + '<div class="field"><label>สีประจำกะ (ระบายตัวอักษรรหัสกะในตาราง)</label>'
-      +   '<select id="fColor">'
-      +   Object.keys(HL_COLORS).map(k=>'<option value="'+k+'"'
-          + ((s.color||'')===k?' selected':'')+'>'+esc(HL_COLORS[k].label)+'</option>').join('')
-      +   '</select></div>'
+      + colorField('fC', 'สีประจำกะ', s.color||'', 'ใบพิมพ์จะระบายสีนี้เต็มช่องของวันที่เข้ากะนี้')
       + '<label class="chk'+(s.hl?' on':'')+'" style="display:flex;margin-bottom:.6rem">'
       +   '<input type="checkbox" id="fHl"'+(s.hl?' checked':'')+'> '
       +   'แสดงสีเน้นพื้นที่ในกะนี้</label>'
@@ -591,7 +608,7 @@ function shiftDialog(sh){
             toast('รหัสกะซ้ำ','err'); return;
           }
           Object.assign(s, { code, name, start:$('#fStart').value, end:$('#fEnd').value,
-                             color:$('#fColor').value, hl:$('#fHl').checked,
+                             color:colorFieldValue('fC'), hl:$('#fHl').checked,
                              note:$('#fNote').value.trim() });
           if(isNew) state.data.shifts.push(s);
           await saveMaster((isNew?'เพิ่ม':'แก้ไข')+'กะ '+name);
@@ -599,7 +616,7 @@ function shiftDialog(sh){
         }},
       { label:'ยกเลิก', onClick: closeModal }
     ],
-    onOpen: ()=> bindChkStyle()
+    onOpen: ()=>{ bindChkStyle(); bindColorField('fC'); }
   });
 }
 
@@ -614,10 +631,7 @@ function dutyDialog(dt){
       +   '<input id="fdCode" value="'+esc(d.code)+'" placeholder="บ" maxlength="2"></div>'
       + '<div class="field"><label>ชื่อภารกิจ *</label>'
       +   '<input id="fdName" value="'+esc(d.name)+'" placeholder="ทำงานบ้านผู้บริหาร"></div></div>'
-      + '<div class="field"><label>สี (ระบายตัวอักษรรหัสในตาราง)</label><select id="fdColor">'
-      +   Object.keys(HL_COLORS).map(k=>'<option value="'+k+'"'
-          + ((d.hl||'')===k?' selected':'')+'>'+esc(HL_COLORS[k].label)+'</option>').join('')
-      +   '</select></div>'
+      + colorField('fdC', 'สีประจำภารกิจ', d.hl||'', 'ใบพิมพ์จะระบายสีนี้เต็มช่อง')
       + '<div class="field"><label>หมายเหตุ</label>'
       +   '<input id="fdNote" value="'+esc(d.note||'')+'" placeholder="เช่น ไม่ติดตามงาน"></div>'
       + '<p class="hint">วันที่ลงภารกิจนี้จะไม่ถูกสร้างเช็คลิสต์ ไม่นับเป็นวันลงกะ '
@@ -632,7 +646,7 @@ function dutyDialog(dt){
           if(shiftList().some(x=> x.code === code)){
             toast('รหัสนี้ใช้เป็นรหัสกะอยู่แล้ว','err'); return;
           }
-          Object.assign(d, { code, name, hl:$('#fdColor').value, note:$('#fdNote').value.trim() });
+          Object.assign(d, { code, name, hl:colorFieldValue('fdC'), note:$('#fdNote').value.trim() });
           if(isNew){
             state.data.duties = dutyList().slice();
             state.data.duties.push(d);
@@ -641,6 +655,7 @@ function dutyDialog(dt){
           closeModal(); renderRoute(); toast('บันทึกแล้ว','ok');
         }},
       { label:'ยกเลิก', onClick: closeModal }
-    ]
+    ],
+    onOpen: ()=> bindColorField('fdC')
   });
 }
