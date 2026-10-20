@@ -56,5 +56,11 @@ emit_body() {
   emit_body
 } > dist/hkcs-artifact.html
 
+# ---------- ไฟล์บอกเวอร์ชัน ใช้เตือนผู้ใช้เมื่อมีของใหม่ ----------
+# เว็บโฮสต์ (GitHub Pages) แคช index.html ไว้ 10 นาที ผู้ใช้จึงอาจค้างเวอร์ชันเก่า
+# ตัวแอปจะดึงไฟล์นี้แบบไม่ผ่านแคชมาเทียบ แล้วเตือนให้กดอัปเดต
+VER=$(grep -m1 "APP_VERSION" assets/core.js | sed -E "s/.*'([^']+)'.*/\1/")
+printf '{ "version": "%s", "built": "%s" }\n' "$VER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > version.json
+
 echo "สร้างไฟล์เรียบร้อย:"
 ls -la dist/

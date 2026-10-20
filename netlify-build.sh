@@ -41,6 +41,20 @@ else
   echo "→ ไม่พบ SUPABASE_URL / SUPABASE_ANON_KEY — ใช้ค่าที่กรอกไว้ใน assets/config.js"
 fi
 
+# ---------------------------------------------------------------------
+# กันแคช — GitHub Pages ส่ง Cache-Control: max-age=600 มากับทุกไฟล์
+# ถ้าไม่ต่อท้ายด้วยเลขเวอร์ชัน เบราว์เซอร์จะใช้ไฟล์เก่าต่ออีก 10 นาที
+# และที่อันตรายกว่าคือ index.html ใหม่ + ไฟล์ .js เก่าปนกัน
+# ทำเฉพาะตอน deploy เท่านั้น จะได้ไม่ไปแก้ index.html ในเครื่องผู้พัฒนา
+# ---------------------------------------------------------------------
+if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ] || [ -n "$NETLIFY" ]; then
+  VER=$(grep -m1 "APP_VERSION" assets/core.js | sed -E "s/.*'([^']+)'.*/\1/")
+  STAMP="${VER}.$(date +%s)"
+  echo "→ ต่อท้ายไฟล์ด้วย ?v=${STAMP} เพื่อกันแคช"
+  sed -i -E 's#(src="assets/[A-Za-z0-9._-]+\.js)"#\1?v='"$STAMP"'"#g; '\
+'s#(href="assets/[A-Za-z0-9._-]+\.css)"#\1?v='"$STAMP"'"#g' index.html
+fi
+
 # รวมไฟล์เป็นเวอร์ชันเดียวจบ (ดาวน์โหลดได้ที่ /dist/hkcs-standalone.html)
 bash build.sh
 

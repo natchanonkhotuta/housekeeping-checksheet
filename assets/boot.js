@@ -73,4 +73,39 @@
   window.addEventListener('online', ()=>{
     if(Store.isShared() && state.session) syncNow(true);
   });
+
+  checkForUpdate();
 })();
+
+/**
+ * เตือนเมื่อมีเวอร์ชันใหม่
+ * โฮสต์อย่าง GitHub Pages แคชหน้าเว็บไว้ 10 นาที ผู้ใช้จึงอาจเปิดได้ของเก่า
+ * ทั้งที่ deploy ไปแล้ว — ดึง version.json แบบไม่ผ่านแคชมาเทียบกับตัวที่โหลดอยู่
+ */
+async function checkForUpdate(){
+  if(location.protocol === 'file:') return;          // เปิดจากไฟล์ในเครื่อง ไม่ต้องเช็ก
+  try{
+    const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' });
+    if(!r.ok) return;
+    const v = await r.json();
+    if(!v.version || v.version === APP_VERSION) return;
+
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;padding:.7rem 1rem;'
+      + 'background:#0f766e;color:#fff;display:flex;gap:.8rem;align-items:center;'
+      + 'justify-content:center;flex-wrap:wrap;font-size:.95rem';
+    bar.innerHTML = '<span>มีเวอร์ชันใหม่ <b>'+esc(v.version)+'</b> '
+      + '(ตอนนี้ใช้ '+esc(APP_VERSION)+') — เบราว์เซอร์ยังเก็บไฟล์เก่าไว้</span>'
+      + '<button class="btn sm" id="updNow" style="background:#fff;color:#0f766e;font-weight:600">'
+      + 'โหลดเวอร์ชันใหม่</button>'
+      + '<button class="btn sm" id="updLater" style="background:transparent;color:#fff;'
+      + 'border-color:rgba(255,255,255,.6)">ไว้ก่อน</button>';
+    document.body.appendChild(bar);
+
+    $('#updNow').onclick = ()=>{
+      // ต่อท้าย query ให้ได้ไฟล์ใหม่จริง ไม่ใช่ของในแคช
+      location.replace(location.pathname + '?v=' + Date.now());
+    };
+    $('#updLater').onclick = ()=> bar.remove();
+  }catch(e){ /* เช็กไม่ได้ก็ไม่เป็นไร */ }
+}
