@@ -335,8 +335,9 @@ function colorField(idPrefix, label, current, hint){
     + '<div class="row" style="align-items:center;gap:.4rem">'
     +   '<select id="'+idPrefix+'Sel" style="flex:1">'+presets
     +     '<option value="__custom"'+(custom ? ' selected' : '')+'>🎨 เลือกสีเอง…</option></select>'
-    +   '<input type="color" id="'+idPrefix+'Hex" value="'+(custom ? current : '#ffd43b')+'"'
-    +     ' style="width:52px;height:38px;padding:2px;cursor:pointer"'+(custom ? '' : ' disabled')+'>'
+    +   '<input type="color" id="'+idPrefix+'Hex" value="'
+    +     (custom ? current : (printFill(current||'').bg || '#ffd43b'))+'"'
+    +     ' style="width:52px;height:38px;padding:2px;cursor:pointer" title="เลือกสีเอง">'
     +   '<span class="pill" id="'+idPrefix+'Prev" style="min-width:64px;text-align:center">ตัวอย่าง</span>'
     + '</div>'
     + (hint ? '<span class="hint">'+hint+'</span>' : '')
@@ -346,14 +347,20 @@ function bindColorField(idPrefix){
   const sel = $('#'+idPrefix+'Sel'), hex = $('#'+idPrefix+'Hex'), prev = $('#'+idPrefix+'Prev');
   if(!sel) return;
   const upd = ()=>{
-    const custom = (sel.value === '__custom');
-    hex.disabled = !custom;
-    const c = custom ? hex.value : sel.value;
+    const c = (sel.value === '__custom') ? hex.value : sel.value;
     prev.className = 'pill ' + hlCls(c);
     prev.setAttribute('style', hlCss(c) + 'min-width:64px;text-align:center');
   };
-  sel.onchange = upd;
-  hex.oninput  = upd;
+  // เลือกจากเมนู = ใช้สีสำเร็จรูป และตั้งค่าเริ่มต้นของจานสีให้ใกล้เคียงกัน
+  sel.onchange = ()=>{
+    if(sel.value !== '__custom'){
+      const f = printFill(sel.value);
+      if(f.bg && f.bg !== '#ffffff') hex.value = f.bg;
+    }
+    upd();
+  };
+  // แตะจานสีเมื่อไหร่ = ถือว่าเลือกสีเอง ไม่ต้องไปสลับเมนูก่อน
+  hex.oninput = ()=>{ sel.value = '__custom'; upd(); };
   upd();
 }
 function colorFieldValue(idPrefix){
