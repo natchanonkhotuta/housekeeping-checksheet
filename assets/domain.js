@@ -449,13 +449,37 @@ function areaShort(areaId){
 /* ---------- สีเน้นพื้นที่ในตารางกะ ----------
    ตึกส่วนใหญ่ไม่ต้องมีสี เน้นเฉพาะตึกที่ต้องสังเกต
    และแสดงสีเฉพาะกะที่ตั้งค่าไว้ว่าให้แสดงสี                      */
+/**
+ * สีเน้น — bg/fg ใช้บนหน้าจอ (อ่อน) · pbg/pfg ใช้บนใบพิมพ์ (เข้ม ระบายเต็มช่อง)
+ * ใบพิมพ์ต้องเข้มกว่าจอ เพราะพิมพ์ออกมาแล้วสีอ่อนจะจางจนแยกไม่ออก
+ */
 const HL_COLORS = {
-  '':       { label:'ไม่เน้น',  bg:'',        fg:'' },
-  'red':    { label:'แดง',      bg:'#fcebeb', fg:'#a32d2d' },
-  'amber':  { label:'ส้ม',      bg:'#faeeda', fg:'#854f0b' },
-  'green':  { label:'เขียว',    bg:'#eaf3de', fg:'#3b6d11' },
-  'blue':   { label:'น้ำเงิน',  bg:'#e6f1fb', fg:'#0c447c' },
-  'purple': { label:'ม่วง',     bg:'#eeedfe', fg:'#3c3489' }
+  '':       { label:'ไม่เน้น',  bg:'',        fg:'',        pbg:'#ffffff', pfg:'#000000' },
+  'red':    { label:'แดง',      bg:'#fcebeb', fg:'#a32d2d', pbg:'#e03131', pfg:'#ffffff' },
+  'amber':  { label:'ส้ม',      bg:'#faeeda', fg:'#854f0b', pbg:'#f08c00', pfg:'#ffffff' },
+  'yellow': { label:'เหลือง',   bg:'#fff8db', fg:'#846100', pbg:'#ffd43b', pfg:'#1a1a1a' },
+  'green':  { label:'เขียว',    bg:'#eaf3de', fg:'#3b6d11', pbg:'#2f9e44', pfg:'#ffffff' },
+  'blue':   { label:'น้ำเงิน',  bg:'#e6f1fb', fg:'#0c447c', pbg:'#1c7ed6', pfg:'#ffffff' },
+  'purple': { label:'ม่วง',     bg:'#eeedfe', fg:'#3c3489', pbg:'#7048e8', pfg:'#ffffff' }
+};
+
+/** สีสำหรับระบายเต็มช่องในใบพิมพ์ */
+function printFill(hl){
+  const c = HL_COLORS[hl] || HL_COLORS[''];
+  return { bg: c.pbg, fg: c.pfg };
+}
+
+/** สีของช่องวันหยุด/วันลาในใบพิมพ์ — แยกตามเหตุที่หยุด */
+const OFF_FILL = {
+  W: { bg:'#e03131', fg:'#ffffff', label:'วันหยุดประจำสัปดาห์' },
+  H: { bg:'#a61e1e', fg:'#ffffff', label:'วันหยุดประจำปีบริษัท' },
+  V: { bg:'#868e96', fg:'#ffffff', label:'ลาพักร้อน' },
+  S: { bg:'#868e96', fg:'#ffffff', label:'ลาป่วย' },
+  P: { bg:'#868e96', fg:'#ffffff', label:'ลากิจ' },
+  M: { bg:'#868e96', fg:'#ffffff', label:'ลาคลอด' },
+  C: { bg:'#868e96', fg:'#ffffff', label:'หยุดชดเชย' },
+  A: { bg:'#868e96', fg:'#ffffff', label:'ขาดงาน' },
+  L: { bg:'#868e96', fg:'#ffffff', label:'ลาอื่น ๆ' }
 };
 
 /** สีเน้นของพื้นที่ ('' = ไม่เน้น) */
@@ -519,7 +543,37 @@ function applyHighlightDefaults(){
     }
   }
 
+  // ใบพิมพ์ระบายสีเต็มช่องตามกะ กะที่ยังไม่มีสีจึงต้องได้สีเริ่มต้น
+  // ไม่งั้นช่องจะขาวโล่งอ่านยาก (ยังเปลี่ยนเองได้ที่หน้ากะการทำงาน)
+  if(!state.data.shColorInit2){
+    state.data.shColorInit2 = true;
+    changed = true;
+    const pool = ['yellow','amber','green','blue','purple'];
+    shiftList().forEach(s=>{
+      if(s.color) return;
+      const free = pool.find(c=> !shiftList().some(x=> x.color === c));
+      s.color = free || 'yellow';
+    });
+  }
+
   return changed;
+}
+
+/* ---------- ครั้งที่แก้ไขของตารางกะ (รายรอบ) ---------- */
+/**
+ * เก็บไว้ในตารางกะของ "เดือนที่รอบนั้นเริ่ม" จึงไม่ทับกันระหว่างรอบ
+ * (รอบหนึ่งเริ่มที่เดือนเดียวเสมอ)
+ */
+function rosterRev(y, m){
+  const r = state.rosters[ymKey(y, m)];
+  return (r && r.rev) ? String(r.rev) : '';
+}
+async function setRosterRev(y, m, val){
+  const r = state.rosters[ymKey(y, m)];
+  if(!r) return false;
+  r.rev = String(val || '').trim();
+  await saveRoster(y, m);
+  return true;
 }
 
 /** พื้นที่ที่แม่บ้านคนนี้รับผิดชอบ (ใช้จำกัดตัวเลือกตอนเพิ่มงานด้วยมือ) */

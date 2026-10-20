@@ -51,7 +51,12 @@ SCREENS.roster = async function(v){
     +     esc(cycleLabel(y, m))+'</span>'
     +   '<button class="btn sm" id="rsNext">รอบถัดไป ▶</button>'
     +   '<button class="btn sm" id="rsNow">รอบปัจจุบัน</button>'
-    + '</div></div></div>'
+    + '</div></div>'
+    + '<div class="field" style="max-width:150px"><label>แก้ไขครั้งที่</label>'
+    +   '<input id="rsRev" value="'+esc(rosterRev(y, m))+'" maxlength="6" placeholder="'
+    +   esc(state.data.org.rev || '00')+'"'+(editable?'':' disabled')+'>'
+    +   '<span class="hint">พิมพ์ลงหัวใบตารางกะ</span></div>'
+    + '</div>'
 
     + '<div class="card" style="padding:.7rem .9rem"><div class="row" style="align-items:center">'
     +   '<div style="flex:1;min-width:180px"><b>'+days.length+' วันในรอบนี้</b>'
@@ -126,6 +131,12 @@ SCREENS.roster = async function(v){
   $('#rsNow').onclick  = ()=>{ const c = currentCycle(); goCycle(c.y, c.m); };
   if($('#rsShifts')) $('#rsShifts').onclick = ()=> go('shifts');
   $('#rsPrint').onclick = ()=> printRoster(y, m);
+
+  // ครั้งที่แก้ไข — เก็บไว้กับตารางกะของรอบนี้ ไม่ใช่ของทั้งระบบ
+  if($('#rsRev') && editable) $('#rsRev').onchange = async e=>{
+    await setRosterRev(y, m, e.target.value);
+    toast('บันทึกครั้งที่แก้ไขแล้ว','ok');
+  };
 
   if(!editable) return;
 
@@ -295,34 +306,36 @@ const SIGN_BLOCKS = [
 ];
 
 const ROSTER_PRINT_CSS = ''
-  + '#printHost .rt{font-family:"Sarabun","Noto Sans Thai",Tahoma,sans-serif;color:#000;background:#fff;font-size:9pt;'
-  +   '-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+  + '#printHost .rt{font-family:"Sarabun","Noto Sans Thai",Tahoma,sans-serif;color:#000;background:#fff;'
+  +   'font-size:9.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;'
+  +   'display:flex;flex-direction:column;height:194mm}'
   + '#printHost .rt .hd{display:flex;justify-content:space-between;align-items:flex-start;'
-  +   'border-bottom:1.5pt solid #000;padding-bottom:4px;margin-bottom:6px;font-size:8.5pt}'
-  + '#printHost .rt h1{font-size:14pt;margin:0;text-align:center;flex:1}'
-  + '#printHost .rt h1 span{display:block;font-size:10pt;font-weight:400}'
-  + '#printHost .rt table{border-collapse:collapse;width:100%;table-layout:fixed}'
-  + '#printHost .rt th,#printHost .rt td{border:.6pt solid #000;padding:1px 1px;'
-  +   'font-size:7.5pt;text-align:center;overflow:hidden;color:#000}'
-  + '#printHost .rt th{background:#e8e8e8;font-weight:700}'
-  + '#printHost .rt td.nm,#printHost .rt th.nm{text-align:left;font-size:8.5pt;padding:2px 5px;'
-  +   'white-space:nowrap;text-overflow:ellipsis;width:20%}'
-  + '#printHost .rt td.nm .ec{font-size:7pt;font-weight:400;color:#333;'
-  +   'border:.5pt solid #888;border-radius:2px;padding:0 2pt;margin-right:2pt}'
-  + '#printHost .rt td.c{font-weight:700;font-size:7.5pt;line-height:1.1}'
-  + '#printHost .rt td.c .sh{display:block;font-size:6.5pt;font-weight:400}'
-  + '#printHost .rt td.c i{font-style:normal;display:inline-block;padding:0 .4pt}'
-  + '#printHost .rt .sun{background:#f2dede}'
-  + '#printHost .rt .hol{background:#fbe5c8}'
-  + '#printHost .rt .off{background:#d9d9d9}'
-  + '#printHost .rt .legend{font-size:8pt;margin-top:6px;border:.6pt solid #000;padding:4px 6px}'
-  + '#printHost .rt .legend b{font-weight:700}'
-  + '#printHost .rt .legend i{font-style:normal;padding:0 3px;border-radius:2px}'
-  + '#printHost .rt .sign{display:flex;gap:10px;margin-top:12px;font-size:8.5pt}'
-  + '#printHost .rt .sign>div{flex:1;border:.6pt solid #000;padding:5px 6px;min-height:62px;font-size:8pt}'
+  +   'border-bottom:1.5pt solid #000;padding-bottom:4px;margin-bottom:5px;font-size:9pt}'
+  + '#printHost .rt h1{font-size:15pt;margin:0;text-align:center;flex:1}'
+  + '#printHost .rt h1 span{display:block;font-size:10.5pt;font-weight:400}'
+  + '#printHost .rt table{border-collapse:collapse;width:100%;table-layout:fixed;flex:1}'
+  + '#printHost .rt th,#printHost .rt td{border:.75pt solid #000;padding:0;'
+  +   'font-size:9pt;text-align:center;overflow:hidden;color:#000}'
+  + '#printHost .rt th{background:#dfe3e8;font-weight:700;padding:1px 0}'
+  + '#printHost .rt td.nm,#printHost .rt th.nm{text-align:left;font-size:10pt;padding:2px 6px;'
+  +   'white-space:nowrap;text-overflow:ellipsis}'
+  + '#printHost .rt td.nm .ec{display:inline-block;min-width:38pt;font-size:8.5pt;font-weight:400;'
+  +   'color:#000;margin-right:4pt}'
+  + '#printHost .rt td.c{font-weight:700;font-size:11pt;line-height:1.05;letter-spacing:-.2pt}'
+  + '#printHost .rt td.c .hi{background:#fff;border-radius:2pt;padding:0 1.5pt;margin:0 .5pt}'
+  + '#printHost .rt td.sm{font-weight:700;font-size:10pt;background:#f2f4f6}'
+  + '#printHost .rt .sun th{background:#c7ccd1}'
+  + '#printHost .rt .legend{font-size:8.5pt;margin-top:5px;border:.75pt solid #000;padding:3px 6px}'
+  + '#printHost .rt .legend .row{display:flex;flex-wrap:wrap;gap:4pt 10pt;align-items:center}'
+  + '#printHost .rt .legend .sw{display:inline-flex;align-items:center;gap:3pt;white-space:nowrap}'
+  + '#printHost .rt .legend .bx{display:inline-block;width:16pt;height:10pt;border:.75pt solid #000;'
+  +   'text-align:center;font-size:8pt;font-weight:700;line-height:10pt}'
+  + '#printHost .rt .legend .ar{margin-top:2px;font-size:8pt;color:#222}'
+  + '#printHost .rt .sign{display:flex;gap:6px;margin-top:5px;font-size:8.5pt}'
+  + '#printHost .rt .sign>div{flex:1;border:.75pt solid #000;padding:4px 6px;min-height:58px}'
   + '#printHost .rt .sign .ps{font-size:7.5pt;margin:1px 0 2px;line-height:1.15}'
-  + '#printHost .rt .ln{border-bottom:.6pt dotted #000;height:18px;margin:12px 0 3px}'
-  + '#printHost .rt .foot{font-size:7pt;margin-top:4px;text-align:right}';
+  + '#printHost .rt .ln{border-bottom:.75pt dotted #000;height:16px;margin:10px 0 3px}'
+  + '#printHost .rt .foot{font-size:7.5pt;margin-top:3px;text-align:right}';
 
 function printRoster(y, m){
   const days = cycleDays(y, m);
@@ -331,99 +344,109 @@ function printRoster(y, m){
   const shifts = shiftList();
   if(!staffs.length){ toast('ยังไม่มีข้อมูลแม่บ้าน','err'); return; }
 
-  // มีภารกิจพิเศษลงไว้ในรอบนี้ไหม — ถ้าไม่มี ไม่ต้องเพิ่มคอลัมน์ให้เปลือง
   const anyDuty = staffs.some(s=> rosterSummary(y, m, s.id).duty > 0);
+  const rev = rosterRev(y, m) || org.rev;
 
-  const hlStyle = (hl)=>{
-    const c = HL_COLORS[hl];
-    return (hl && c) ? ' style="background:'+c.bg+';color:'+c.fg+'"' : '';
-  };
+  // ความสูงแถวคิดจากจำนวนแม่บ้าน ให้ตารางกินพื้นที่ A4 แนวนอนเต็มหน้า
+  const bodyMm = Math.max(40, 194 - 18 - 12 - (anyDuty ? 22 : 20) - 24);
+  const rowMm  = Math.max(5, Math.min(14, bodyMm / staffs.length)).toFixed(2);
 
+  const usedOff = {};
   let head = '', dowRow = '';
   days.forEach(dd=>{
     const hd = holidayOn(dd.iso), dow = dowOf(dd.y, dd.m, dd.d);
-    const cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
+    const cls = (hd || dow === 0) ? 'sun' : '';
     head   += '<th class="'+cls+'">'+dd.d+'</th>';
     dowRow += '<th class="'+cls+'">'+TH_DOW_SHORT[dow]+'</th>';
   });
 
-  const usedOff = {};                 // ตัวอักษรวันหยุดที่ใช้จริงในรอบนี้ → ชื่อเต็ม
   const body = staffs.map(s=>{
     let tds = '', nWork = 0, nOff = 0, nDuty = 0;
     days.forEach(dd=>{
       const rec = rosterAt(dd, s.id);
       const ars = rosterAreas(rec);
-      const hd = holidayOn(dd.iso), dow = dowOf(dd.y, dd.m, dd.d);
-      let cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
-      let inner = '';
       const duty = rosterDuty(rec);
+      let style = '', inner = '';
+
       if(!rec.off && duty){
-        cls = 'off'; nDuty++;
-        inner = '<span class="sh"'+hlStyle(dutyColor(duty.id))+'>'+esc(duty.code)+'</span>';
-      }
-      else if(!rec.off && (rec.sh || ars.length)){
-        const sh = shiftById(rec.sh);
+        const f = printFill(dutyColor(duty.id));
+        style = 'background:'+f.bg+';color:'+f.fg;
+        inner = esc(duty.code);
+        nDuty++;
+      } else if(!rec.off && (rec.sh || ars.length)){
+        const f = printFill(shiftColor(rec.sh));
+        style = 'background:'+f.bg+';color:'+f.fg;
+        // เลขตึก — ตึกที่ตั้งสีเน้นไว้ใส่กรอบขาวให้เด่นบนพื้นสีเข้ม
+        inner = ars.length
+          ? ars.map(id=>{
+              const hl = areaHighlight(id);
+              return hl
+                ? '<span class="hi" style="color:'+HL_COLORS[hl].pbg+'">'+esc(areaShort(id))+'</span>'
+                : esc(areaShort(id));
+            }).join(',')
+          : esc((shiftById(rec.sh)||{}).code || '?');
         nWork++;
-        inner = '<span class="sh"'+hlStyle(shiftColor(rec.sh))+'>'
-            + esc(sh ? sh.code : '?')+'</span>'
-          + ars.map(id=>'<i'+hlStyle(rosterCellColor(rec.sh, id))+'>'
-              + esc(areaShort(id))+'</i>').join('');
-      }
-      else {
-        // วันหยุด — ระบุเหตุด้วยตัวอักษร W / H / V (หรือชนิดลาอื่น)
+      } else {
         const om = offMarkOf(s.id, dd.iso, !!rec.off);
         if(om){
-          cls = 'off'; nOff++;
-          usedOff[om.mk] = om.label;
+          const f = OFF_FILL[om.mk] || OFF_FILL.L;
+          style = 'background:'+f.bg+';color:'+f.fg;
           inner = om.mk;
+          usedOff[om.mk] = om.label;
+          nOff++;
         }
       }
-      tds += '<td class="c '+cls+'">'+inner+'</td>';
+      tds += '<td class="c" style="'+style+'">'+inner+'</td>';
     });
-    return '<tr><td class="nm"><span class="ec">'+esc(s.empCode||'—')+'</span> '
+    return '<tr style="height:'+rowMm+'mm"><td class="nm"><span class="ec">'+esc(s.empCode||'—')+'</span>'
       + esc(s.name)+'</td>'+tds
-      + '<td>'+(nWork||'')+'</td><td>'+(nOff||'')+'</td>'
-      + (anyDuty ? '<td>'+(nDuty||'')+'</td>' : '')+'</tr>';
+      + '<td class="sm">'+(nWork||'')+'</td><td class="sm">'+(nOff||'')+'</td>'
+      + (anyDuty ? '<td class="sm">'+(nDuty||'')+'</td>' : '')+'</tr>';
   }).join('');
 
-  const colW = ((anyDuty ? 68 : 72) / days.length).toFixed(3);
+  const swatch = (bg, fg, txt, label)=>
+    '<span class="sw"><i class="bx" style="background:'+bg+';color:'+fg+'">'+esc(txt)+'</i>'
+    + esc(label)+'</span>';
+
+  const sumCols = anyDuty ? 3 : 2;
+  const nameW = 17, sumW = 3.6;
+  const colW  = ((100 - nameW - sumW*sumCols) / days.length).toFixed(3);
+
   const html =
     '<div class="rt">'
     + '<div class="hd"><span><b>'+esc(org.name)+'</b><br>'+esc(org.dept)+'</span>'
     +   '<h1>ตารางกะปฏิบัติงาน — แม่บ้าน<span>รอบ '+esc(cycleLabel(y, m))+'</span></h1>'
-    +   '<span style="text-align:right">'+esc(org.doc)+'-R<br>แก้ไขครั้งที่ '+esc(org.rev)+'</span></div>'
-    + '<table><colgroup><col style="width:20%">'
+    +   '<span style="text-align:right">'+esc(org.doc)+'-R<br>แก้ไขครั้งที่ '+esc(rev)+'</span></div>'
+    + '<table><colgroup><col style="width:'+nameW+'%">'
     +   days.map(()=>'<col style="width:'+colW+'%">').join('')
-    +   '<col style="width:4%"><col style="width:4%">'
-    +   (anyDuty ? '<col style="width:4%">' : '')
+    +   '<col style="width:'+sumW+'%"><col style="width:'+sumW+'%">'
+    +   (anyDuty ? '<col style="width:'+sumW+'%">' : '')
     + '</colgroup><thead>'
     +   '<tr><th class="nm" rowspan="2">รหัส / ชื่อแม่บ้าน</th>'+head
     +     '<th rowspan="2">ทำงาน</th><th rowspan="2">หยุด</th>'
     +     (anyDuty ? '<th rowspan="2">พิเศษ</th>' : '')+'</tr>'
     +   '<tr>'+dowRow+'</tr></thead><tbody>'+body+'</tbody></table>'
-    + '<div class="legend"><b>กะ:</b> '
-    +   shifts.map(s=> esc(s.code)+' = '+esc(s.name)+' '+esc(s.start)+'–'+esc(s.end)).join(' &nbsp; ')
-    +   '<br><b>พื้นที่:</b> '
-    +   D.areas(true).map(a=>{
-          const hl = areaHighlight(a.id);
-          return '<i'+hlStyle(hl)+'>'+esc(areaShort(a.id))+'</i> = '+esc(a.name);
-        }).join(' &nbsp; ')
-    +   '<br><b>วิธีอ่าน:</b> บรรทัดบนคือรหัสกะ บรรทัดล่างคือเลขตึกที่ไปทำวันนั้น '
-    +   '(หนึ่งวันมีได้หลายตึก) &nbsp; · &nbsp; ช่องว่าง = ยังไม่ได้ลงตาราง'
-    +   '<br><b>วันหยุด / วันลา:</b> '
-    +   (Object.keys(usedOff).length
-        ? Object.keys(usedOff).sort().map(mk=>'<i>'+esc(mk)+'</i> = '+esc(usedOff[mk])).join(' &nbsp; ')
-        : '<i>W</i> = วันหยุดประจำสัปดาห์ &nbsp; <i>H</i> = วันหยุดประจำปีบริษัท &nbsp; <i>V</i> = ลาพักร้อน')
-    +   (anyDuty
-      ? '<br><b>ภารกิจพิเศษ</b> (ไม่มีการติดตามงาน): '
-        + dutyList().map(d=>'<i'+hlStyle(dutyColor(d.id))+'>'+esc(d.code)+'</i> = '+esc(d.name))
-            .join(' &nbsp; ')
-      : '')
-    +   (shifts.some(s=>s.hl)
-        ? '<br><b>สีเน้น</b> แสดงเฉพาะกะ '
-          + shifts.filter(s=>s.hl).map(s=> esc(s.code)+' ('+esc(s.start)+'–'+esc(s.end)+')').join(', ')
-        : '')
+
+    + '<div class="legend"><div class="row">'
+    +   shifts.map(s=>{
+          const f = printFill(shiftColor(s.id));
+          return swatch(f.bg, f.fg, s.code, 'เข้าเวร '+s.start+' – '+s.end+' น.'
+            + (s.note ? ' ('+s.note+')' : ''));
+        }).join('')
+    +   dutyList().filter(d=> anyDuty).map(d=>{
+          const f = printFill(dutyColor(d.id));
+          return swatch(f.bg, f.fg, d.code, d.name);
+        }).join('')
+    +   Object.keys(usedOff).sort().map(mk=>{
+          const f = OFF_FILL[mk] || OFF_FILL.L;
+          return swatch(f.bg, f.fg, mk, usedOff[mk]);
+        }).join('')
     + '</div>'
+    + '<div class="ar"><b>ตึก/พื้นที่:</b> '
+    +   D.areas(true).map(a=> esc(areaShort(a.id))+' = '+esc(a.name)).join(' &nbsp;·&nbsp; ')
+    +   ' &nbsp;—&nbsp; ตัวเลขในช่องคือตึกที่ไปทำวันนั้น หนึ่งวันมีได้หลายตึก (เช่น 1,3)</div>'
+    + '</div>'
+
     + '<div class="sign">'
     +   SIGN_BLOCKS.map(b=>
           '<div><b>'+b.role+'</b><div class="ln"></div>( …………………………… )'
