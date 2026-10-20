@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -62,19 +62,18 @@ const ROLES = {
    --------------------------------------------------------------- */
 const PERMS = {
   admin:      ['*'],
-  supervisor: ['dashboard','mywork','assign','keyin','scan','roster','print','report',
-               'holiday','check.any','staff.view','area.view','taskdef.view','shift.view'],
+  supervisor: ['dashboard','assign','keyin','scan','roster','print','report',
+               'holiday','staff.view','area.view','taskdef.view','shift.view'],
   manager:    ['dashboard','print','report',
                'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
   recorder:   ['dashboard','keyin','scan','print','report',
                'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
-  staff:      ['dashboard','mywork','check.self','print.self','holiday.view']
+  staff:      ['dashboard','print.self','holiday.view']
 };
 
 /** สิทธิ์ที่ยอมให้ "เปิดหน้าจอ" นั้นได้ (ข้อใดข้อหนึ่ง) */
 const ROUTE_PERMS = {
   dashboard: ['dashboard'],
-  mywork:    ['mywork','check.self','check.any'],
   assign:    ['assign'],
   keyin:     ['keyin'],
   scan:      ['scan'],

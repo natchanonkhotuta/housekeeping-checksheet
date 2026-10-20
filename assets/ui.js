@@ -9,7 +9,6 @@
 const NAV = [
   { grp:'ภาพรวม', items:[
     { id:'dashboard', ic:'📊', label:'แดชบอร์ด' },
-    { id:'mywork',    ic:'✅', label:'งานของฉัน' }
   ]},
   { grp:'ปฏิบัติงาน', items:[
     { id:'assign', ic:'🗓️', label:'มอบหมายงาน (ปฏิทิน)' },

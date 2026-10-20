@@ -738,7 +738,7 @@ function userDialog(user){
       + (isNew ? '<div class="field"><label>รหัสผ่านเริ่มต้น *</label>'
                + '<input type="password" id="fP" value="1234"></div>' : '')
       + '<p class="hint">บัญชีบทบาท “แม่บ้าน” ควรผูกกับข้อมูลแม่บ้าน '
-      + 'มิฉะนั้นหน้า “งานของฉัน” จะไม่รู้ว่าเป็นงานของใคร</p>',
+      + 'เพื่อให้ระบบรู้ว่างานในตารางเป็นของใคร</p>',
     actions:[
       { label:'บันทึก', cls:'primary', onClick: async ()=>{
           const un = $('#fU').value.trim().toLowerCase(), nm = $('#fN').value.trim();
