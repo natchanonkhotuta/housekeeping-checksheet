@@ -133,14 +133,19 @@ function buildSheetSpecs(){
   const plansOf = areaId=> cycleMonths(y, m)
     .map(c=> state.plans[planKey(c.y, c.m, areaId)]).filter(Boolean);
 
+  // ฟอร์มเปล่าไม่ต้องรอให้สร้างตารางงานก่อน — พิมพ์จากรายการงานมาตรฐานได้เลย
+  // (เดิมบังคับว่าต้องมีช่องงานในรอบนั้น พื้นที่ที่ยังไม่ได้กดสร้างตารางจึงพิมพ์ไม่ออก)
+  const blankForm = (PRINT_OPT.doc === 'blank');
+
   if(PRINT_OPT.by === 'area'){
     const areas = (state.ui.prArea === '__all' || !state.ui.prArea)
       ? D.areas(true) : [D.area(state.ui.prArea)].filter(Boolean);
     areas.forEach(a=>{
       const ents = entriesOf(a.id);
-      if(!ents.length) return;
+      const all  = D.taskDefs(a.id, true);
+      if(!ents.length && !(blankForm && all.length)) return;
       const ids  = new Set(ents.map(e=> e.c.t));
-      const defs = D.taskDefs(a.id, true).filter(td=> ids.has(td.id));
+      const defs = (blankForm && !ents.length) ? all : all.filter(td=> ids.has(td.id));
       const names = Array.from(new Set(ents.map(e=> e.c.s).filter(Boolean))).map(D.staffName);
       specs.push({
         title: a.name, areaId: a.id, staffId:'', plans: plansOf(a.id), days, defs,
@@ -165,7 +170,19 @@ function buildSheetSpecs(){
       });
     });
   }
-  return specs.filter(s=> s.plans.length && s.defs.length);
+  // เรียงงานตามหมวด เพื่อให้ใบพิมพ์แยกกลุ่มได้ตามหมวดที่ตั้งไว้
+  const catOrder = {};
+  catList().forEach((c, i)=>{ catOrder[c.id] = i; });
+  specs.forEach(s=>{
+    s.defs = s.defs.slice().sort((x, y)=>{
+      const cx = (x.catId && catById(x.catId)) ? catOrder[x.catId] : 9999;
+      const cy = (y.catId && catById(y.catId)) ? catOrder[y.catId] : 9999;
+      return (cx - cy) || ((x.order||0) - (y.order||0));
+    });
+  });
+
+  // ฟอร์มเปล่าพิมพ์ได้แม้ยังไม่มีตารางงาน จึงไม่ต้องมี plans
+  return specs.filter(s=> s.defs.length && (blankForm || s.plans.length));
 }
 
 /** วาดเอกสารทั้งหมดลงหน้าตัวอย่าง */
@@ -181,8 +198,14 @@ async function drawSheets(){
 
   const specs = buildSheetSpecs();
   if(!specs.length){
-    host.innerHTML = '<div class="card"><div class="empty">ยังไม่มีตารางงานของรอบนี้<br>'
-      + '<span class="hint">ไปที่หน้า “มอบหมายงาน” แล้วกด “สร้าง/อัปเดตตาราง” ก่อน</span></div></div>';
+    host.innerHTML = '<div class="card"><div class="empty">'
+      + (PRINT_OPT.doc === 'blank'
+          ? 'พื้นที่นี้ยังไม่มีรายการงานมาตรฐาน<br>'
+            + '<span class="hint">ไปที่หน้า “รายการงานมาตรฐาน” เพิ่มงานของพื้นที่นี้ก่อน</span>'
+          : 'ยังไม่มีผลการปฏิบัติงานของรอบนี้<br>'
+            + '<span class="hint">ไปที่หน้า “มอบหมายงาน” แล้วกด “สร้าง/อัปเดตตาราง” ก่อน '
+            + 'หรือเลือกชนิดเอกสารเป็น “ฟอร์มเปล่า”</span>')
+      + '</div></div>';
     return;
   }
 
@@ -208,7 +231,7 @@ function sheetHtml(p, pageNo, pageTotal){
   const dim = days.length;
   const org = state.data.org;
   const planOf = dd => sp.plans.find(x=> x.y === dd.y && x.m === dd.m) || null;
-  const plan = sp.plans[0];
+  const blankForm = (PRINT_OPT.doc === 'blank');
 
   let thDays = '', thPeriods = '';
   days.forEach(dd=>{
@@ -220,6 +243,9 @@ function sheetHtml(p, pageNo, pageTotal){
     thPeriods += '<th class="'+cls+' p">ช</th><th class="'+cls+' p">บ</th>';
   });
 
+  // แทรกแถวหัวหมวดเมื่อขึ้นหมวดใหม่ (เฉพาะเมื่อมีการใช้หมวดงานจริง)
+  const showCats = usesCats(sp.defs);
+  let lastCat = null;
   const rows = defs.map((td,i)=>{
     let tds = '';
     days.forEach(dd=>{
@@ -231,7 +257,11 @@ function sheetHtml(p, pageNo, pageTotal){
         const c = dp ? dp.cells[cellKey(td.id, dd.d, pk)] : null;
         let cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
         let mark = '';
-        if(c && !(sp.staffId && c.s !== sp.staffId)){
+        if(blankForm){
+          // ฟอร์มเปล่า: เปิดช่องตามความถี่ของงาน ไม่ต้องรอให้สร้างตารางงานก่อน
+          const applies = taskAppliesOn(td, dd.y, dd.m, dd.d) && periodsOf(td).includes(pk);
+          if(!applies) cls = cls || 'na';
+        } else if(c && !(sp.staffId && c.s !== sp.staffId)){
           const off = c.s ? staffOffOn(c.s, iso) : null;
           if(off && !ST_DONE.includes(c.st)){ cls = 'off'; mark = 'ห'; }
           else if(PRINT_OPT.showStatus) mark = STATUS[c.st] ? STATUS[c.st].mark : '';
@@ -241,9 +271,50 @@ function sheetHtml(p, pageNo, pageTotal){
         tds += '<td class="'+cls+' mk">'+esc(mark)+'</td>';
       });
     });
-    return '<tr><td class="no">'+(startNo+i)+'</td>'
+    let head = '';
+    const cid = (td.catId && catById(td.catId)) ? td.catId : CAT_NONE;
+    if(showCats && cid !== lastCat){
+      lastCat = cid;
+      head = '<tr class="cat"><td colspan="'+(2 + dim*2)+'">'
+        + esc(catName(cid === CAT_NONE ? '' : cid))+'</td></tr>';
+    }
+    return head + '<tr><td class="no">'+(startNo+i)+'</td>'
       + '<td class="tk" title="'+esc(td.detail||'')+'">'+esc(td.name)+'</td>'+tds+'</tr>';
   }).join('');
+
+  /* ---- แถวเน้นผู้รับผิดชอบตามตารางกะ ---- */
+  // บอกว่าวันไหนพื้นที่นี้เป็นของใคร กะอะไร ตามที่ลงไว้ในตารางกะ
+  let rosterRow = '', rosterKey = '';
+  if(rosterCoversArea(y, m, sp.areaId)){
+    const num = {}, seq = [];
+    let tds = '';
+    days.forEach(dd=>{
+      const who = rosterStaffFor(dd, sp.areaId)
+        .filter(w=> !sp.staffId || w.staff.id === sp.staffId);
+      const dow = dowOf(dd.y, dd.m, dd.d);
+      const hd  = holidayOn(dd.iso);
+      let cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
+      let style = '', txt = '';
+      if(who.length){
+        txt = who.map(w=>{
+          if(!num[w.staff.id]){ seq.push(w.staff); num[w.staff.id] = seq.length; }
+          const sh = shiftById(w.sh);
+          return (sh ? sh.code : '') + num[w.staff.id];
+        }).join(' ');
+        const f = printFill(shiftColor(who[0].sh));
+        if(f.bg && f.bg !== '#ffffff'){ style = 'background:'+f.bg+';color:'+f.fg; cls = ''; }
+      }
+      tds += '<td colspan="2" class="'+cls+' rs" style="'+style+'">'+esc(txt)+'</td>';
+    });
+    rosterRow = '<tr class="rsrow"><td class="no"></td>'
+      + '<td class="tk"><b>ผู้รับผิดชอบตามตารางกะ</b></td>'+tds+'</tr>';
+    if(seq.length){
+      rosterKey = '<div class="rskey"><b>ตามตารางกะ:</b> '
+        + seq.map((s,i)=> (i+1)+' = '+esc(s.name)).join(' &nbsp;·&nbsp; ')
+        + ' &nbsp;|&nbsp; ' + shiftList().map(s=> esc(s.code)+' = '+esc(s.start)+'–'+esc(s.end)).join(' &nbsp;·&nbsp; ')
+        + '</div>';
+    }
+  }
 
   let supRow = '';
   if(PRINT_OPT.showSub){
@@ -281,14 +352,16 @@ function sheetHtml(p, pageNo, pageTotal){
     +   '<div><b>ปี พ.ศ.:</b> '+(beYear(y) === beYear(cycleEndOf(y,m).y)
     ?     beYear(y) : beYear(y)+'–'+beYear(cycleEndOf(y,m).y))+'</div>'
     +   '<div><b>สถานะเอกสาร:</b> '
-    +     (sp.plans.every(x=> x.status==='approved')?'อนุมัติแล้ว'
+    +     (!sp.plans.length ? 'ฟอร์มเปล่า'
+    :     sp.plans.every(x=> x.status==='approved')?'อนุมัติแล้ว'
     :     sp.plans.some(x=> x.status==='review')?'รอตรวจสอบ':'แบบร่าง')+'</div>'
     + '</div>'
     + '<table class="cs"><colgroup><col style="width:2.2%"><col style="width:19%">'
     +   Array.from({length: dim*2}).map(()=>'<col style="width:'+colW+'%">').join('')
     + '</colgroup><thead>'
     +   '<tr><th rowspan="2" class="no">ที่</th><th rowspan="2">รายการงาน</th>'+thDays+'</tr>'
-    +   '<tr>'+thPeriods+'</tr></thead><tbody>'+rows+supRow+'</tbody></table>'
+    +   '<tr>'+thPeriods+'</tr></thead><tbody>'+rosterRow+rows+supRow+'</tbody></table>'
+    + rosterKey
     + (PRINT_OPT.showStatus
       ? '<div class="legend">'
         + '<span><b>ช</b>=เช้า <b>บ</b>=บ่าย</span><span><i class="na"></i>ไม่มีงาน</span>'

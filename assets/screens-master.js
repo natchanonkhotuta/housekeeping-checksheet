@@ -297,7 +297,8 @@ SCREENS.taskdefs = async function(v){
 
   v.innerHTML =
     '<div class="page-head"><h1>📋 รายการงานมาตรฐาน</h1><span class="sp"></span>'
-    + (editable ? '<button class="btn" id="copyTasks">คัดลอกไปพื้นที่อื่น</button>'
+    + (editable ? '<button class="btn" id="manageCats">🗂️ หมวดงาน</button>'
+                + '<button class="btn" id="copyTasks">คัดลอกไปพื้นที่อื่น</button>'
                 + '<button class="btn primary" id="addTask">+ เพิ่มงาน</button>' : '')
     + '</div>'
     + '<div class="toolbar">'+areaPicker('tdArea')+'</div>'
@@ -322,7 +323,7 @@ SCREENS.taskdefs = async function(v){
           + '</div>';
       })()
     + '<div class="tablewrap"><table><thead><tr>'
-    +   '<th class="num">ลำดับ</th><th>รหัสงาน</th><th>ชื่องาน / รายละเอียด</th><th>ความถี่</th>'
+    +   '<th class="num">ลำดับ</th><th>รหัสงาน</th><th>หมวดงาน</th><th>ชื่องาน / รายละเอียด</th><th>ความถี่</th>'
     +   '<th>วัน</th><th>ช่วงเวลา</th><th>ผู้รับผิดชอบ</th><th class="num">สถานะ</th>'
     +   (editable ? '<th class="num">จัดการ</th>' : '')
     + '</tr></thead><tbody>'
@@ -330,6 +331,9 @@ SCREENS.taskdefs = async function(v){
         '<tr>'
         + '<td class="num">'+t.order+'</td>'
         + '<td><span class="pill">'+esc(t.code)+'</span></td>'
+        + '<td>'+(t.catId && catById(t.catId)
+            ? '<span class="pill">'+esc(catName(t.catId))+'</span>'
+            : '<span class="hint">—</span>')+'</td>'
         + '<td><b>'+esc(t.name)+'</b>'+(t.detail?'<div class="hint">'+esc(t.detail)+'</div>':'')+'</td>'
         + '<td>'+FREQ[t.freq]+'</td>'
         + '<td>'+(t.freq==='weekly'
@@ -348,11 +352,12 @@ SCREENS.taskdefs = async function(v){
             + '<button class="btn sm" data-tog="'+t.id+'">'+(t.active?'ปิด':'เปิด')+'</button> '
             + '<button class="btn sm danger" data-del="'+t.id+'">ลบ</button></td>' : '')
         + '</tr>').join('')
-      : '<tr><td colspan="9" class="empty">ยังไม่มีรายการงานในพื้นที่นี้</td></tr>')
+      : '<tr><td colspan="10" class="empty">ยังไม่มีรายการงานในพื้นที่นี้</td></tr>')
     + '</tbody></table></div>';
 
   $('#tdArea').onchange = e=>{ state.ui.areaId = e.target.value; renderRoute(); };
   if(!editable) return;
+  $('#manageCats').onclick = ()=> taskCatsDialog();
 
   if($('#tdFillOwner')) $('#tdFillOwner').onclick = ()=>{
     const owners = D.staffOfArea(areaId);
@@ -401,19 +406,28 @@ SCREENS.taskdefs = async function(v){
 
 function taskDefDialog(td, areaId){
   const isNew = !td;
-  const t = td || { id:uid('td'), code:'', name:'', detail:'', areaId, freq:'daily',
+  const t = td || { id:uid('td'), code: nextTaskCode(areaId), name:'', detail:'', areaId, freq:'daily',
                     weekdays:[1], monthDays:[1], period:'morning', defaultStaffId:'',
-                    active:true, order: D.taskDefs(areaId,false).length + 1 };
+                    active:true, order: nextTaskOrder(areaId) };
   openModal({
     title: isNew ? 'เพิ่มรายการงาน' : 'แก้ไขรายการงาน', width:'600px',
     body:'<div class="row">'
-      + '<div class="field" style="max-width:150px"><label>รหัสงาน *</label>'
-      +   '<input id="fCode" value="'+esc(t.code)+'" placeholder="F1-CL01"></div>'
+      + '<div class="field" style="max-width:190px"><label>รหัสงาน *</label>'
+      +   '<div class="row" style="gap:.3rem">'
+      +     '<input id="fCode" value="'+esc(t.code)+'" placeholder="F1-CL01" style="flex:1">'
+      +     '<button type="button" class="btn sm" id="fCodeAuto" title="รันรหัสใหม่ตามพื้นที่">↻</button>'
+      +   '</div>'
+      +   '<span class="hint">ระบบรันต่อให้เอง แก้เองได้</span></div>'
       + '<div class="field"><label>ชื่องาน *</label><input id="fName" value="'+esc(t.name)+'"></div></div>'
       + '<div class="field"><label>รายละเอียด</label><textarea id="fDetail">'+esc(t.detail||'')+'</textarea></div>'
       + '<div class="row">'
       + '<div class="field"><label>พื้นที่ปฏิบัติงาน</label><select id="fArea">'
       +   selOptions(D.areas(true),'id','name',t.areaId)+'</select></div>'
+      + '<div class="field" style="max-width:200px"><label>หมวดงาน</label><select id="fCat">'
+      +   '<option value="">— ไม่ระบุหมวด —</option>'
+      +   catList().map(c=>'<option value="'+esc(c.id)+'"'
+            + ((t.catId||'')===c.id?' selected':'')+'>'+esc(c.name)+'</option>').join('')
+      +   '</select></div>'
       + '<div class="field" style="max-width:170px"><label>ความถี่</label><select id="fFreq">'
       +   selOptions(Object.keys(FREQ).map(k=>({k, v:FREQ[k]})),'k','v',t.freq)+'</select></div></div>'
       + '<div class="field" id="wkBox"><label>วันในสัปดาห์ที่ต้องทำ</label><div>'+dowChecks('wd', t.weekdays)+'</div></div>'
@@ -427,8 +441,9 @@ function taskDefDialog(td, areaId){
       + '</select></div>'
       + '<div class="field"><label>ผู้รับผิดชอบเริ่มต้น</label><select id="fStaff">'
       +   selOptions(D.staffAll(true),'id','name',t.defaultStaffId,'— ยังไม่กำหนด —')+'</select></div>'
-      + '<div class="field" style="max-width:110px"><label>ลำดับ</label>'
-      +   '<input type="number" id="fOrder" value="'+t.order+'" min="1"></div></div>'
+      + '<div class="field" style="max-width:120px"><label>ลำดับ</label>'
+      +   '<input type="number" id="fOrder" value="'+t.order+'" min="1">'
+      +   '<span class="hint">รันต่อให้เอง</span></div></div>'
       + '<label class="chk'+(t.active?' on':'')+'"><input type="checkbox" id="fActive"'
       +   (t.active?' checked':'')+'> เปิดใช้งาน</label>',
     actions:[
@@ -444,6 +459,7 @@ function taskDefDialog(td, areaId){
           }
           Object.assign(t, {
             code, name, detail: $('#fDetail').value.trim(), areaId: $('#fArea').value,
+            catId: $('#fCat').value,
             freq, weekdays: wd, monthDays: md, period: $('#fPeriod').value,
             defaultStaffId: $('#fStaff').value, order: clampInt($('#fOrder').value,1,999),
             active: $('#fActive').checked
@@ -463,6 +479,18 @@ function taskDefDialog(td, areaId){
       };
       $('#fFreq').onchange = sync;
       sync();
+
+      // รหัสงาน/ลำดับรันตามพื้นที่ — เปลี่ยนพื้นที่แล้วรันใหม่ให้ ถ้ายังไม่ได้พิมพ์ทับเอง
+      const autoFill = ()=>{
+        const aid = $('#fArea').value;
+        $('#fCode').value  = nextTaskCode(aid);
+        $('#fOrder').value = nextTaskOrder(aid);
+      };
+      $('#fCodeAuto').onclick = autoFill;
+      $('#fArea').addEventListener('change', ()=>{
+        if(!isNew) return;                       // แก้ไขงานเดิม ไม่ยุ่งกับรหัสที่ใช้อยู่
+        if($('#fCode').value.trim() === t.code) autoFill();
+      });
     }
   });
 }
@@ -964,3 +992,91 @@ SCREENS.settings = async function(v){
       renderShell(); renderRoute();
     }, 'รีเซ็ต', 'danger');
 };
+
+/* =====================================================================
+   หมวดงาน — เช่น ห้องครัว · ห้องประชุม · สำนักงาน
+   ใช้แยกกลุ่มงานในใบเช็คงานที่พิมพ์ออกมา
+   ===================================================================== */
+function taskCatsDialog(){
+  const render = ()=>{
+    const list = catList();
+    const used = {};
+    (state.data.taskDefs || []).forEach(t=>{ if(t.catId) used[t.catId] = (used[t.catId]||0) + 1; });
+    const noneN = (state.data.taskDefs || []).filter(t=> !t.catId || !catById(t.catId)).length;
+    return '<p class="hint">จัดกลุ่มงานตามหมวด เวลาพิมพ์ใบเช็คงานจะแยกหัวข้อให้ตามหมวดนี้ '
+      + 'งานที่ไม่ระบุหมวดจะไปรวมอยู่กลุ่มท้ายสุด</p>'
+      + '<div class="tablewrap"><table><thead><tr><th class="num">ลำดับ</th><th>ชื่อหมวด</th>'
+      +   '<th class="num">งานที่ใช้</th><th class="num">จัดการ</th></tr></thead><tbody>'
+      + (list.length ? list.map((c,i)=>
+          '<tr><td class="num">'+(i+1)+'</td>'
+          + '<td><b>'+esc(c.name)+'</b></td>'
+          + '<td class="num">'+(used[c.id]||0)+'</td>'
+          + '<td class="num" style="white-space:nowrap">'
+          +   '<button class="btn sm" data-cup="'+esc(c.id)+'"'+(i===0?' disabled':'')+'>▲</button> '
+          +   '<button class="btn sm" data-cdown="'+esc(c.id)+'"'+(i===list.length-1?' disabled':'')+'>▼</button> '
+          +   '<button class="btn sm" data-cedit="'+esc(c.id)+'">แก้ชื่อ</button> '
+          +   '<button class="btn sm danger" data-cdel="'+esc(c.id)+'">ลบ</button></td></tr>').join('')
+        : '<tr><td colspan="4" class="empty">ยังไม่มีหมวดงาน</td></tr>')
+      + '</tbody></table></div>'
+      + '<div class="hint" style="margin-top:.4rem">ยังไม่ระบุหมวด: <b>'+noneN+'</b> รายการ</div>'
+      + '<div class="row" style="margin-top:.6rem">'
+      +   '<input id="catNew" placeholder="ชื่อหมวดใหม่ เช่น ห้องครัว" style="flex:1">'
+      +   '<button class="btn primary" id="catAdd">+ เพิ่มหมวด</button></div>';
+  };
+
+  const bind = ()=>{
+    const body = $('#catBody');
+    const redraw = ()=>{ body.innerHTML = render(); bind(); };
+
+    $('#catAdd').onclick = async ()=>{
+      const name = $('#catNew').value.trim();
+      if(!name){ toast('พิมพ์ชื่อหมวดก่อน','err'); return; }
+      if(catList().some(c=> c.name === name)){ toast('มีหมวดนี้อยู่แล้ว','err'); return; }
+      state.data.taskCats = (state.data.taskCats || []).concat(
+        [{ id: uid('cat'), name, order: nextCatOrder() }]);
+      await saveMaster('เพิ่มหมวดงาน '+name);
+      redraw(); toast('เพิ่มหมวดแล้ว','ok');
+    };
+
+    $$('[data-cedit]', body).forEach(b=> b.onclick = ()=>{
+      const c = catById(b.dataset.cedit);
+      const nm = prompt('ชื่อหมวดงาน', c.name);
+      if(nm === null) return;
+      const v = String(nm).trim();
+      if(!v){ toast('ชื่อหมวดว่างไม่ได้','err'); return; }
+      c.name = v;
+      saveMaster('แก้ชื่อหมวดงาน '+v).then(()=>{ redraw(); toast('บันทึกแล้ว','ok'); });
+    });
+
+    const move = async (id, dir)=>{
+      const list = catList();
+      const i = list.findIndex(c=> c.id === id);
+      const j = i + dir;
+      if(i < 0 || j < 0 || j >= list.length) return;
+      const a = list[i].order || (i+1), b2 = list[j].order || (j+1);
+      list[i].order = b2; list[j].order = a;
+      await saveMaster('สลับลำดับหมวดงาน');
+      redraw();
+    };
+    $$('[data-cup]', body).forEach(b=> b.onclick = ()=> move(b.dataset.cup, -1));
+    $$('[data-cdown]', body).forEach(b=> b.onclick = ()=> move(b.dataset.cdown, 1));
+
+    $$('[data-cdel]', body).forEach(b=> b.onclick = ()=>{
+      const c = catById(b.dataset.cdel);
+      const n = (state.data.taskDefs || []).filter(t=> t.catId === c.id).length;
+      if(!confirm('ลบหมวด "'+c.name+'" ?\n\n'
+        + (n ? 'งาน '+n+' รายการที่อยู่หมวดนี้จะไม่ถูกลบ แต่จะกลายเป็น "ไม่ระบุหมวด"'
+             : 'ยังไม่มีงานใช้หมวดนี้'))) return;
+      (state.data.taskDefs || []).forEach(t=>{ if(t.catId === c.id) t.catId = ''; });
+      state.data.taskCats = (state.data.taskCats || []).filter(x=> x.id !== c.id);
+      saveMaster('ลบหมวดงาน '+c.name).then(()=>{ redraw(); toast('ลบแล้ว','ok'); });
+    });
+  };
+
+  openModal({
+    title:'จัดการหมวดงาน', width:'620px',
+    body:'<div id="catBody"></div>',
+    actions:[{ label:'ปิด', onClick: ()=>{ closeModal(); renderRoute(); } }],
+    onOpen: ()=>{ $('#catBody').innerHTML = render(); bind(); }
+  });
+}

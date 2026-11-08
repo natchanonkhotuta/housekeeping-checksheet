@@ -67,6 +67,22 @@ function dailyRowsAll(plan, day){
     const af = plan.cells[cellKey(td.id, day, 'afternoon')];
     if(mk || af) out.push({ td, hasM: !!mk, hasA: !!af });
   });
+
+  // เรียงตามหมวดงาน งานหมวดเดียวกันจะอยู่ติดกันบนใบ
+  // (ใบนี้เป็นฟอร์มสแกน ตำแหน่งแถวต้องคงที่ จึงใช้วิธีเรียง+ติดป้าย ไม่แทรกแถวหัวหมวด)
+  const ord = {};
+  catList().forEach((c, i)=>{ ord[c.id] = i; });
+  out.sort((x, y)=>{
+    const cx = (x.td.catId && catById(x.td.catId)) ? ord[x.td.catId] : 9999;
+    const cy = (y.td.catId && catById(y.td.catId)) ? ord[y.td.catId] : 9999;
+    return (cx - cy) || ((x.td.order||0) - (y.td.order||0));
+  });
+  let last = null;
+  out.forEach(r=>{
+    const cid = (r.td.catId && catById(r.td.catId)) ? r.td.catId : '';
+    r.catHead = (cid !== last) ? catName(cid) : '';
+    last = cid;
+  });
   return out;
 }
 
@@ -124,7 +140,10 @@ function dailySheetHtml(areaId, y, m, day){
       const who = (c && c.s) ? D.staffName(c.s).split(' ')[0] : '';
       body += '<div class="dname" style="top:'+pct(top)+';height:'+pct(GEO.table.rowH)
         + ';left:'+pct(GEO.table.nameX)+';width:'+pct(GEO.table.nameW)+'">'
-        + '<span class="no">'+(i+1)+'</span><span class="nm">'+esc(r.td.name)+'</span>'
+        + '<span class="no">'+(i+1)+'</span>'
+        + (r.catHead && usesCats(D.taskDefs(plan.areaId, true))
+            ? '<span class="ct">'+esc(r.catHead)+'</span>' : '')
+        + '<span class="nm">'+esc(r.td.name)+'</span>'
         + '<span class="wh">'+esc(who)+'</span></div>';
     }
     PERIOD_KEYS.forEach((pk, pi)=>{

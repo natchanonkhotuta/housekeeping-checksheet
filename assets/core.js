@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.9.3';
+const APP_VERSION = '1.10.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -568,6 +568,13 @@ function normalizeData(data){
     ];
     data.dutiesInit = true;      // ผู้ใช้ลบทิ้งได้ และจะไม่ถูกเติมกลับ
   }
+  // หมวดงาน เช่น ห้องครัว · ห้องประชุม · สำนักงาน — ใช้แยกกลุ่มงานตอนพิมพ์
+  // งานที่ยังไม่ระบุหมวดยังใช้ได้ตามปกติ จะไปรวมอยู่กลุ่ม "ไม่ระบุหมวด"
+  if(!Array.isArray(data.taskCats)) data.taskCats = [];
+
+  // เช็คลิสต์งานหัวหน้าแม่บ้าน — รายการงานของหัวหน้าเอง แยกจากงานแม่บ้าน
+  if(!Array.isArray(data.supTasks)) data.supTasks = [];
+
   // สีเน้นตั้งค่าเริ่มต้นที่ applyHighlightDefaults() หลัง state.data พร้อมแล้ว
   // (ต้องใช้ areaShort() ซึ่งอ่านจาก state.data จึงทำตรงนี้ไม่ได้)
   return data;

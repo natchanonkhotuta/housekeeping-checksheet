@@ -683,6 +683,112 @@ function staffMonthMatrix(y, m, staffId, idx){
   return { rows, byDay, dim, workDays, marks, comments, areaDays, goal };
 }
 
+/**
+ * ใครถูกจัดให้ดูแลพื้นที่นี้ในวันนั้นตามตารางกะ
+ * ใช้เน้นบนใบเช็คงาน ว่าวันไหนชั้นนี้เป็นของใคร กะอะไร
+ * @returns [{ staff, sh }] — ว่างแปลว่าวันนั้นไม่มีใครถูกจัดให้ดูแลพื้นที่นี้
+ */
+function rosterStaffFor(dd, areaId){
+  const out = [];
+  D.staffAll(true).forEach(s=>{
+    const rec = rosterAt(dd, s.id);
+    if(!rec || rec.off || rec.sp) return;
+    if(rosterAreas(rec).includes(areaId)) out.push({ staff:s, sh: rec.sh || '' });
+  });
+  return out;
+}
+
+/** พื้นที่นี้มีการลงตารางกะในรอบนั้นบ้างไหม */
+function rosterCoversArea(y, m, areaId){
+  return cycleDays(y, m).some(dd=> rosterStaffFor(dd, areaId).length > 0);
+}
+
+/* ---------------------------------------------------------------
+   หมวดงาน — เช่น ห้องครัว · ห้องประชุม · สำนักงาน
+   ใช้แยกกลุ่มงานเวลาพิมพ์ใบเช็คงาน งานที่ยังไม่ระบุหมวดไปอยู่กลุ่มท้ายสุด
+   --------------------------------------------------------------- */
+const CAT_NONE = '__none';
+
+function catList(){
+  return (state.data.taskCats || []).slice().sort((a, b)=> (a.order || 0) - (b.order || 0));
+}
+function catById(id){ return (state.data.taskCats || []).find(c=> c.id === id) || null; }
+function catName(id){
+  const c = catById(id);
+  return c ? c.name : 'ไม่ระบุหมวด';
+}
+function nextCatOrder(){
+  return (state.data.taskCats || []).reduce((mx, c)=> Math.max(mx, c.order || 0), 0) + 1;
+}
+
+/**
+ * จัดกลุ่มรายการงานตามหมวด เรียงตามลำดับหมวด
+ * @returns [{ catId, name, tasks:[] }] — มีเฉพาะหมวดที่มีงานจริง
+ */
+function groupTasksByCat(defs){
+  const bucket = {};
+  defs.forEach(td=>{
+    const id = (td.catId && catById(td.catId)) ? td.catId : CAT_NONE;
+    (bucket[id] = bucket[id] || []).push(td);
+  });
+  const out = [];
+  catList().forEach(c=>{
+    if(bucket[c.id]) out.push({ catId:c.id, name:c.name, tasks:bucket[c.id] });
+  });
+  if(bucket[CAT_NONE]) out.push({ catId:CAT_NONE, name:'ไม่ระบุหมวด', tasks:bucket[CAT_NONE] });
+  return out;
+}
+
+/** มีการใช้หมวดงานอยู่จริงไหม — ถ้าไม่มี ใบพิมพ์จะไม่ต้องแทรกแถวหัวหมวดให้เปลือง */
+function usesCats(defs){
+  if(!(state.data.taskCats || []).length) return false;
+  return defs.some(td=> td.catId && catById(td.catId));
+}
+
+/* ---------------------------------------------------------------
+   รหัสงานและลำดับงาน — ให้ระบบรันต่อให้เอง
+   --------------------------------------------------------------- */
+
+/** ลำดับถัดไปของพื้นที่นี้ = ลำดับสูงสุดที่มีอยู่ + 1 (ไม่ใช่จำนวนรายการ จึงไม่ซ้ำแม้เคยลบงานไป) */
+function nextTaskOrder(areaId){
+  return (state.data.taskDefs || [])
+    .filter(t=> t.areaId === areaId)
+    .reduce((mx, t)=> Math.max(mx, parseInt(t.order, 10) || 0), 0) + 1;
+}
+
+/**
+ * รหัสงานถัดไป — เดารูปแบบจากรหัสที่พื้นที่นี้ใช้อยู่แล้ว
+ * เช่น มี F1-CL01..F1-CL14 อยู่ จะได้ F1-CL15 · มี BG-BG01 อยู่ จะได้ BG-BG02
+ * ถ้ายังไม่มีรหัสเลย ใช้ <รหัสพื้นที่>-01
+ */
+function nextTaskCode(areaId){
+  const area = D.area(areaId);
+  const list = (state.data.taskDefs || []).filter(t=> t.areaId === areaId);
+  const split = c=> String(c || '').match(/^(.*?)(\d+)\s*$/);
+
+  // รูปแบบที่ใช้บ่อยที่สุดในพื้นที่นี้ (ส่วนนำหน้า + จำนวนหลัก)
+  const tally = {};
+  list.forEach(t=>{
+    const mm = split(t.code);
+    if(mm) tally[mm[1] + '\u0000' + mm[2].length] = (tally[mm[1] + '\u0000' + mm[2].length] || 0) + 1;
+  });
+  const best = Object.keys(tally).sort((a, b)=> tally[b] - tally[a])[0];
+  let prefix = ((area && area.code) ? String(area.code).toUpperCase() : 'T') + '-';
+  let width = 2;
+  if(best){ const p = best.split('\u0000'); prefix = p[0]; width = +p[1]; }
+
+  const used = new Set(list.map(t=> String(t.code || '').trim().toUpperCase()));
+  let n = 0;
+  list.forEach(t=>{
+    const mm = split(t.code);
+    if(mm && mm[1] === prefix) n = Math.max(n, parseInt(mm[2], 10));
+  });
+  let code;
+  do { n++; code = prefix + String(n).padStart(width, '0'); }
+  while(used.has(code.toUpperCase()) && n < 9999);
+  return code;
+}
+
 /** งานชื่อเดียวกันถือเป็นแถวเดียวกัน ไม่ว่าจะอยู่พื้นที่ไหน */
 function taskRowKey(td){
   return String(td.name || '').trim().replace(/\s+/g, ' ');
