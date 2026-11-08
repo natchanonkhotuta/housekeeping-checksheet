@@ -15,6 +15,7 @@ const NAV = [
     { id:'keyin',    ic:'⌨️', label:'บันทึกผลจากกระดาษ' },
     { id:'scan',     ic:'📷', label:'สแกนใบเช็คงาน' },
     { id:'roster',   ic:'🗓️', label:'ตารางกะ' },
+    { id:'supervisor', ic:'🧑‍💼', label:'งานหัวหน้าแม่บ้าน' },
     { id:'print',  ic:'🖨️', label:'พิมพ์ / ส่งออก CHECK SHEET' }
   ]},
   { grp:'ข้อมูลหลัก', items:[

@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -62,9 +62,9 @@ const ROLES = {
    --------------------------------------------------------------- */
 const PERMS = {
   admin:      ['*'],
-  supervisor: ['dashboard','assign','keyin','scan','roster','print','report',
+  supervisor: ['dashboard','assign','keyin','scan','roster','print','report','suptask',
                'holiday','staff.view','area.view','taskdef.view','shift.view'],
-  manager:    ['dashboard','print','report',
+  manager:    ['dashboard','print','report','suptask.view',
                'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
   recorder:   ['dashboard','keyin','scan','print','report',
                'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
@@ -78,6 +78,7 @@ const ROUTE_PERMS = {
   keyin:     ['keyin'],
   scan:      ['scan'],
   roster:    ['roster'],
+  supervisor:['suptask','suptask.view'],
   shifts:    ['shift','shift.view'],
   staffmonth:['report'],
   print:     ['print','print.self'],
@@ -452,6 +453,7 @@ const state = {
   plans: {},      // { 'YYYY-MM|areaId' : plan }
   dailies: {},    // { 'YYYY-MM' : บันทึกประจำวันรายบุคคล }
   rosters: {},    // { 'YYYY-MM' : ตารางกะ }
+  sups: {},       // { 'YYYY-MM' : เช็คลิสต์งานหัวหน้าแม่บ้าน }
   ui: {
     y: todayParts().y, m: todayParts().m,
     areaId:'', staffId:'', selDay:0,
@@ -553,6 +555,7 @@ function normalizeData(data){
   data.planIndex  = data.planIndex  || [];
   data.dailyIndex = data.dailyIndex || [];
   data.rosterIndex = data.rosterIndex || [];
+  data.supIndex = data.supIndex || [];
   // กะการทำงาน — ค่าเริ่มต้นตามที่ใช้จริง แก้/เพิ่มได้ที่หน้าจัดการกะ
   if(!Array.isArray(data.shifts) || !data.shifts.length){
     data.shifts = [
@@ -596,6 +599,10 @@ async function syncNow(silent){
   for(const k of Object.keys(state.rosters)){
     const rr = await Store.get('shift:'+k);
     if(rr) state.rosters[k] = rr;
+  }
+  for(const k of Object.keys(state.sups)){
+    const sv = await Store.get('sup:'+k);
+    if(sv) state.sups[k] = sv;
   }
   if(!silent){
     if(Store.online) toast('ซิงก์ข้อมูลล่าสุดแล้ว','ok');

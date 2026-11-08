@@ -162,14 +162,29 @@ async function collectAllRosters(){
   return out;
 }
 
+/** เช็คลิสต์งานหัวหน้าแม่บ้านทุกเดือนที่เคยบันทึกไว้ */
+async function collectAllSups(){
+  const keys = new Set(state.data.supIndex || []);
+  Object.keys(state.sups).forEach(k=> keys.add(k));
+  (await Store.keys('sup:')).forEach(k=> keys.add(k.slice(4)));
+
+  const out = {};
+  for(const k of keys){
+    const s = state.sups[k] || await Store.get('sup:'+k);
+    if(s) out[k] = s;
+  }
+  return out;
+}
+
 async function backupAll(){
   toast('กำลังรวบรวมข้อมูล…');
   const plans   = await collectAllPlans();
   const dailies = await collectAllDailies();
   const rosters = await collectAllRosters();
+  const sups    = await collectAllSups();
   const dump = {
     app:'hkcs', version: APP_VERSION, exportedAt: nowIso(),
-    master: state.data, plans, dailies, rosters
+    master: state.data, plans, dailies, rosters, sups
   };
   const t = new Date();
   const name = 'backup_ระบบแม่บ้าน_' + (t.getFullYear()+543) + pad2(t.getMonth()+1) + pad2(t.getDate()) + '.json';
@@ -222,10 +237,19 @@ function restoreDialog(){
               state.rosters[k] = j.rosters[k];
               await Store.set('shift:'+k, j.rosters[k]);
             }
+            // เช็คลิสต์หัวหน้าแม่บ้าน (ไฟล์สำรองรุ่นเก่าไม่มีส่วนนี้ ก็ข้ามไป)
+            const skeys = Object.keys(j.sups || {});
+            state.sups = {};
+            state.data.supIndex = skeys.slice().sort();
+            for(const k of skeys){
+              state.sups[k] = j.sups[k];
+              await Store.set('sup:'+k, j.sups[k]);
+            }
             await Store.set(DATA_KEY, state.data);
             closeModal();
             toast('กู้คืนข้อมูลเรียบร้อย ('+keys.length+' ตาราง · '+dkeys.length
-              + ' บันทึกประจำวัน · '+rkeys.length+' ตารางกะ)','ok');
+              + ' บันทึกประจำวัน · '+rkeys.length+' ตารางกะ'
+              + (skeys.length ? ' · '+skeys.length+' เช็คลิสต์หัวหน้า' : '')+')','ok');
             if(state.session){ renderShell(); renderRoute(); } else renderLogin();
           }catch(e){ toast('กู้คืนไม่สำเร็จ: '+e.message,'err'); }
         }},

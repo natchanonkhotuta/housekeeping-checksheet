@@ -1285,3 +1285,91 @@ function cycleStats(cp){
   });
   return o;
 }
+
+/* =====================================================================
+   10. เช็คลิสต์งานหัวหน้าแม่บ้าน
+   ---------------------------------------------------------------------
+   รายการงานของหัวหน้าเอง แยกจากงานแม่บ้านคนละชุด
+   บันทึกผลเก็บเป็นรายเดือนปฏิทิน (sup:YYYY-MM) แต่หน้าจอมองเป็นรอบ 21–20
+   เหมือนหน้าจออื่นทั้งระบบ
+   ===================================================================== */
+
+function supTaskList(activeOnly){
+  const t = (state.data.supTasks || []).slice().sort((a, b)=> (a.order||0) - (b.order||0));
+  return activeOnly ? t.filter(x=> x.active !== false) : t;
+}
+function supTaskById(id){ return (state.data.supTasks || []).find(t=> t.id === id) || null; }
+function nextSupOrder(){
+  return (state.data.supTasks || []).reduce((mx, t)=> Math.max(mx, parseInt(t.order,10) || 0), 0) + 1;
+}
+function nextSupCode(){
+  const list = state.data.supTasks || [];
+  let n = 0;
+  list.forEach(t=>{
+    const mm = String(t.code || '').match(/^SUP-(\d+)$/i);
+    if(mm) n = Math.max(n, parseInt(mm[1], 10));
+  });
+  return 'SUP-' + String(n + 1).padStart(2, '0');
+}
+
+async function loadSup(y, m){
+  const k = ymKey(y, m);
+  if(state.sups[k]) return state.sups[k];
+  const got = await Store.get('sup:'+k);
+  state.sups[k] = got || { key:k, y, m, rec:{}, createdAt:nowIso() };
+  if(got) registerIndexKey('supIndex', k);
+  return state.sups[k];
+}
+async function saveSup(y, m){
+  const k = ymKey(y, m);
+  const s = state.sups[k];
+  if(!s) return;
+  s.updatedAt = nowIso();
+  registerIndexKey('supIndex', k);
+  await Store.set('sup:'+k, s);
+}
+/** โหลดทั้งรอบ (พาดสองเดือนปฏิทิน) */
+async function loadCycleSups(y, m){
+  for(const c of cycleMonths(y, m)) await loadSup(c.y, c.m);
+}
+
+/** ผลของงานหนึ่งในวันหนึ่ง — { st, by, at, note } */
+function supRec(dd, taskId){
+  const s = state.sups[ymKey(dd.y, dd.m)];
+  if(!s) return {};
+  return s.rec[taskId + '|' + dd.d] || {};
+}
+function setSupRec(dd, taskId, patch){
+  const s = state.sups[ymKey(dd.y, dd.m)];
+  if(!s) return null;
+  const k = taskId + '|' + dd.d;
+  const rec = s.rec[k] || (s.rec[k] = {});
+  Object.assign(rec, patch);
+  rec.by = state.session ? state.session.name : '';
+  rec.at = nowIso();
+  if(!rec.st && !rec.note) delete s.rec[k];
+  return rec;
+}
+
+/** งานหัวหน้าต้องทำในวันนี้ไหม — ใช้กฎความถี่ชุดเดียวกับงานแม่บ้าน */
+function supAppliesOn(t, dd){
+  return taskAppliesOn(t, dd.y, dd.m, dd.d);
+}
+
+/** สรุปของทั้งรอบ — ทำไปกี่ช่องจากที่ต้องทำกี่ช่อง (นับเฉพาะวันที่ถึงแล้ว) */
+function supCycleSummary(y, m){
+  const t = todayParts();
+  const todayIso = ymd(t.y, t.m, t.d);
+  const tasks = supTaskList(true);
+  let due = 0, done = 0, dueToDate = 0;
+  cycleDays(y, m).forEach(dd=>{
+    tasks.forEach(tk=>{
+      if(!supAppliesOn(tk, dd)) return;
+      due++;
+      const past = dd.iso <= todayIso;
+      if(past) dueToDate++;
+      if(supRec(dd, tk.id).st === 'done') done++;
+    });
+  });
+  return { due, dueToDate, done, pct: dueToDate ? Math.round(done / dueToDate * 100) : 0 };
+}
