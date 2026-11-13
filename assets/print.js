@@ -146,7 +146,12 @@ function buildSheetSpecs(){
       if(!ents.length && !(blankForm && all.length)) return;
       const ids  = new Set(ents.map(e=> e.c.t));
       const defs = (blankForm && !ents.length) ? all : all.filter(td=> ids.has(td.id));
-      const names = Array.from(new Set(ents.map(e=> e.c.s).filter(Boolean))).map(D.staffName);
+      // ชื่อหัวกระดาษยึดตารางกะก่อน ตารางงานที่สร้างไว้ก่อนอาจเป็นชื่อเก่า
+      const rosterNames = Array.from(new Set(
+        days.flatMap(dd=> rosterStaffFor(dd, a.id).map(w=> w.staff.name))));
+      const names = rosterNames.length
+        ? rosterNames
+        : Array.from(new Set(ents.map(e=> e.c.s).filter(Boolean))).map(D.staffName);
       specs.push({
         title: a.name, areaId: a.id, staffId:'', plans: plansOf(a.id), days, defs,
         headerStaff: names.length ? names.join(', ') : '……………………………………',

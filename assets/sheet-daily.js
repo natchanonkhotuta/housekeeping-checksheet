@@ -109,10 +109,14 @@ function dailySheetHtml(areaId, y, m, day){
   const hd   = holidayOn(iso);
   const dow  = dowOf(y, m, day);
 
-  const staffNames = Array.from(new Set(
-    rows.flatMap(r=> PERIOD_KEYS
-      .map(pk=> (plan.cells[cellKey(r.td.id, day, pk)] || {}).s)
-      .filter(Boolean)))).map(D.staffName);
+  // ชื่อผู้ปฏิบัติงานยึดตารางกะเป็นหลัก ตารางงานที่สร้างไว้ก่อนอาจเป็นชื่อเก่า
+  const byRoster = rosterStaffFor({ y, m, d:day, iso }, areaId).map(w=> w.staff);
+  const staffNames = byRoster.length
+    ? byRoster.map(s=> s.name)
+    : Array.from(new Set(
+        rows.flatMap(r=> PERIOD_KEYS
+          .map(pk=> (plan.cells[cellKey(r.td.id, day, pk)] || {}).s)
+          .filter(Boolean)))).map(D.staffName);
 
   const bits = encodeSheetCode(areaIndex(areaId), day, m+1, y);
   const pct  = n => (n * 100).toFixed(3) + '%';
@@ -137,7 +141,9 @@ function dailySheetHtml(areaId, y, m, day){
     if(r){
       const c = plan.cells[cellKey(r.td.id, day, 'morning')]
              || plan.cells[cellKey(r.td.id, day, 'afternoon')];
-      const who = (c && c.s) ? D.staffName(c.s).split(' ')[0] : '';
+      const who = byRoster.length
+        ? byRoster[0].name.split(' ')[0]
+        : ((c && c.s) ? D.staffName(c.s).split(' ')[0] : '');
       body += '<div class="dname" style="top:'+pct(top)+';height:'+pct(GEO.table.rowH)
         + ';left:'+pct(GEO.table.nameX)+';width:'+pct(GEO.table.nameW)+'">'
         + '<span class="no">'+(i+1)+'</span>'

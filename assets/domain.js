@@ -176,11 +176,21 @@ function generatePlan(plan, opts){
 
         if((hd || sundayOff) && !assignOnHoliday){ skipped++; return; }
 
-        let staffId = td.defaultStaffId || '';
+        let staffId = '';
         let note = '';
 
-        // งานที่ยังไม่ได้กำหนดผู้รับผิดชอบ ให้ใช้คนที่ดูแลพื้นที่นี้
-        // ไม่งั้นจะได้ช่องที่ไม่มีชื่อคน ซึ่งหายไปจากทุกหน้าจอที่ดูรายบุคคล
+        // ตารางกะมาก่อนเสมอ — ใครถูกลงให้ดูแลพื้นที่นี้ในวันนั้น คนนั้นคือผู้รับผิดชอบ
+        // (ก่อนหน้านี้ไปหยิบจากช่องพื้นที่รับผิดชอบของแม่บ้าน ทำให้ชื่อไม่ตรงตารางกะ)
+        const byRoster = rosterStaffFor({ y, m, d, iso }, areaId);
+        if(byRoster.length){
+          staffId = byRoster[0].staff.id;
+          note = 'ตามตารางกะ';
+        }
+
+        if(!staffId) staffId = td.defaultStaffId || '';
+
+        // ยังไม่มีใครเลย — ใช้คนที่ดูแลพื้นที่นี้ ไม่งั้นจะได้ช่องที่ไม่มีชื่อคน
+        // ซึ่งหายไปจากทุกหน้าจอที่ดูรายบุคคล
         if(!staffId){
           staffId = suggestSubstitute(areaId, iso, '');
           if(staffId) note = 'ตามผู้รับผิดชอบพื้นที่';
@@ -189,7 +199,11 @@ function generatePlan(plan, opts){
         if(staffId){
           // สถานะถาวร (ลาพัก/พ้นสภาพ) มาก่อนวันหยุดรายวัน
           const inact = staffInactive(staffId);
-          const off = inact ? { kind:'inactive', label: inact, sub:'' } : staffOffOn(staffId, iso);
+          // คนที่มาจากตารางกะ = ผู้จัดตารางลงมือลงเองแล้วว่าวันนั้นเขาทำพื้นที่นี้
+          // จึงไม่ต้องไปเช็ควันหยุดประจำสัปดาห์/วันลาซ้ำแล้วสลับคนให้ (ตารางกะชนะ)
+          const off = inact ? { kind:'inactive', label: inact, sub:'' }
+                    : byRoster.length ? null
+                    : staffOffOn(staffId, iso);
           if(off){
             const sub = off.sub || suggestSubstitute(areaId, iso, staffId);
             if(sub){
@@ -1372,4 +1386,20 @@ function supCycleSummary(y, m){
     });
   });
   return { due, dueToDate, done, pct: dueToDate ? Math.round(done / dueToDate * 100) : 0 };
+}
+
+/**
+ * ช่องงานที่ชื่อผู้รับผิดชอบไม่ตรงกับตารางกะ
+ * ใช้เตือนในหน้ามอบหมายงาน และให้กดแก้ให้ตรงได้ในคลิกเดียว
+ * @returns [{ dd, plan, k, c, should }] — should = staffId ที่ตารางกะกำหนดไว้
+ */
+function rosterMismatches(cp){
+  const out = [];
+  cp.entries().forEach(e=>{
+    const who = rosterStaffFor(e.dd, cp.areaId);
+    if(!who.length) return;                 // ตารางกะไม่ได้ลงพื้นที่นี้ไว้ ไม่ถือว่าผิด
+    const should = who[0].staff.id;
+    if(e.c.s !== should) out.push({ dd:e.dd, plan:e.plan, k:e.k, c:e.c, should });
+  });
+  return out;
 }

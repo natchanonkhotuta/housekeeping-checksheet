@@ -130,6 +130,7 @@ SCREENS.assign = async function(v){
   });
 
   const warnDay = w => w.e.dd.d + ' ' + TH_MONTHS_SHORT[w.e.dd.m];
+  const mism = rosterMismatches(cp);          // ชื่อไม่ตรงกับตารางกะ
 
   const statusBadgeHtml =
     '<span class="badge '+(status==='approved'?'b-verified':status==='review'?'b-doing':'b-pending')+'">'
@@ -163,6 +164,19 @@ SCREENS.assign = async function(v){
     +     (warnHoliday.length + warnClash.length)+'</div></div>'
     + '</div>'
 
+    + (mism.length
+      ? '<div class="card" style="border-color:var(--warn);background:var(--warn-soft)">'
+        + '<h3>⚠️ ชื่อผู้รับผิดชอบไม่ตรงกับตารางกะ</h3>'
+        + '<div>งาน <b>'+mism.length+'</b> ช่อง เป็นชื่อคนละคนกับที่ลงไว้ในตารางกะ '
+        + '<span class="hint">(ใบที่พิมพ์ออกไปจะได้ชื่อตามตารางกะ แต่ตารางในระบบยังเป็นชื่อเดิม)</span>'
+        + '<div class="hint" style="margin-top:.3rem">ตัวอย่าง: '
+        + mism.slice(0,3).map(x=> 'วันที่ '+x.dd.d+' '+TH_MONTHS_SHORT[x.dd.m]+' '
+            + esc(x.c.s ? D.staffName(x.c.s) : 'ยังไม่มีชื่อ')+' → '+esc(D.staffName(x.should))).join(' · ')
+        + (mism.length>3?' …':'')+'</div></div>'
+        + '<div class="row" style="margin-top:.5rem">'
+        + '<button class="btn primary" id="btnSyncRoster">แก้ชื่อให้ตรงกับตารางกะ ('
+        + mism.length+' ช่อง)</button></div></div>'
+      : '')
     + (warnInactive.length
       ? '<div class="card" style="border-color:var(--danger);background:var(--danger-soft)">'
         + '<h3>🚫 มอบหมายให้คนที่ไม่ได้ปฏิบัติงานแล้ว</h3>'
@@ -261,6 +275,23 @@ SCREENS.assign = async function(v){
         });
       }
     });
+  };
+
+  if($('#btnSyncRoster')) $('#btnSyncRoster').onclick = ()=>{
+    confirmDialog('แก้ชื่อผู้รับผิดชอบ <b>'+mism.length+'</b> ช่อง ให้ตรงกับตารางกะ?'
+      + '<div class="hint" style="margin-top:.4rem">🛡️ ช่องที่บันทึกผลไปแล้วจะไม่ถูกแตะ</div>', async ()=>{
+        let n = 0, kept = 0;
+        mism.forEach(x=>{
+          if(cellHasResult(x.c)){ kept++; return; }
+          x.c.s = x.should;
+          if(x.c.st === 'pending') x.c.st = 'assigned';
+          x.c.note = 'ตามตารางกะ';
+          n++;
+        });
+        await cp.save('แก้ชื่อให้ตรงตารางกะ '+n+' ช่อง');
+        closeModal(); renderRoute();
+        toast('แก้แล้ว '+n+' ช่อง'+(kept?' · คงเดิม '+kept+' ช่องที่บันทึกผลแล้ว':''),'ok');
+      }, 'แก้ให้ตรง');
   };
 
   $('#btnClear').onclick = ()=> clearPlanDialog(cp);

@@ -160,7 +160,8 @@ SCREENS.taskdefs = async function(v){
 
   v.innerHTML =
     '<div class="page-head"><h1>📋 รายการงานมาตรฐาน</h1><span class="sp"></span>'
-    + (editable ? '<button class="btn" id="manageCats">🗂️ หมวดงาน</button>'
+    + (editable ? '<button class="btn" id="renumTasks">↕ จัดลำดับใหม่</button>'
+                + '<button class="btn" id="manageCats">🗂️ หมวดงาน</button>'
                 + '<button class="btn" id="copyTasks">คัดลอกไปพื้นที่อื่น</button>'
                 + '<button class="btn primary" id="addTask">+ เพิ่มงาน</button>' : '')
     + '</div>'
@@ -221,6 +222,20 @@ SCREENS.taskdefs = async function(v){
   $('#tdArea').onchange = e=>{ state.ui.areaId = e.target.value; renderRoute(); };
   if(!editable) return;
   $('#manageCats').onclick = ()=> taskCatsDialog();
+
+  // ลำดับซ้ำทำให้เรียงงานบนใบพิมพ์ไม่แน่นอน — ปุ่มนี้ไล่ใส่ 1..n ตามลำดับที่เห็นอยู่
+  $('#renumTasks').onclick = ()=>{
+    const list = D.taskDefs(areaId, false);
+    const dup = list.length - new Set(list.map(t=> t.order)).size;
+    confirmDialog('จัดลำดับงานของ <b>'+esc(D.areaName(areaId))+'</b> ใหม่เป็น 1 ถึง '+list.length+' ?'
+      + '<div class="hint" style="margin-top:.4rem">'
+      + (dup ? 'ตอนนี้มีลำดับซ้ำกันอยู่ '+dup+' รายการ ' : '')
+      + 'เรียงตามที่แสดงอยู่ตอนนี้ ไม่กระทบชื่องาน รหัสงาน หรือผลที่บันทึกไว้</div>', async ()=>{
+        list.forEach((t,i)=>{ t.order = i + 1; });
+        await saveMaster('จัดลำดับงานใหม่ '+D.areaName(areaId));
+        closeModal(); renderRoute(); toast('จัดลำดับใหม่แล้ว','ok');
+      }, 'จัดลำดับใหม่');
+  };
 
   if($('#tdFillOwner')) $('#tdFillOwner').onclick = ()=>{
     const owners = D.staffOfArea(areaId);
@@ -313,6 +328,11 @@ function taskDefDialog(td, areaId){
       { label:'บันทึก', cls:'primary', onClick: async ()=>{
           const code = $('#fCode').value.trim(), name = $('#fName').value.trim();
           if(!code || !name){ toast('กรุณากรอกรหัสงานและชื่องาน','err'); return; }
+          const aid = $('#fArea').value;
+          if((state.data.taskDefs||[]).some(x=> x.id !== t.id && x.areaId === aid
+              && String(x.code||'').toUpperCase() === code.toUpperCase())){
+            toast('รหัสงาน '+code+' ซ้ำกับงานอื่นในพื้นที่นี้','err'); return;
+          }
           const freq = $('#fFreq').value;
           const wd = $$('input[name=wd]:checked').map(i=>+i.value);
           const md = $('#fDays').value.split(',').map(x=>parseInt(x.trim(),10)).filter(x=> x>=1 && x<=31);
