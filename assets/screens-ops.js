@@ -269,7 +269,7 @@ SCREENS.assign = async function(v){
   if($('#btnFixInactive')) $('#btnFixInactive').onclick = ()=>{
     const pool = D.staffOfArea(areaId);
     if(!pool.length){
-      toast('พื้นที่นี้ยังไม่มีแม่บ้านที่ปฏิบัติงานอยู่ — กำหนดพื้นที่รับผิดชอบที่หน้าจัดการข้อมูลแม่บ้านก่อน','err');
+      toast('พื้นที่นี้ยังไม่มีแม่บ้านที่ปฏิบัติงานอยู่ — ลงตารางกะให้พื้นที่นี้ก่อน','err');
       return;
     }
     confirmDialog('แทนที่ชื่อในงาน <b>'+warnInactive.length+'</b> ช่อง ด้วยผู้รับผิดชอบพื้นที่นี้?'

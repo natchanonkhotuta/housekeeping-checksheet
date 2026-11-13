@@ -19,7 +19,6 @@ const NAV = [
     { id:'print',  ic:'🖨️', label:'พิมพ์ / ส่งออก CHECK SHEET' }
   ]},
   { grp:'ข้อมูลหลัก', items:[
-    { id:'staff',    ic:'👥', label:'จัดการข้อมูลแม่บ้าน' },
     { id:'areas',    ic:'🏢', label:'จัดการพื้นที่' },
     { id:'taskdefs', ic:'📋', label:'รายการงานมาตรฐาน' },
     { id:'shifts',   ic:'⏰', label:'กะการทำงาน' },

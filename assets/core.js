@@ -4,7 +4,7 @@
    ===================================================================== */
 'use strict';
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 const LS_PREFIX   = 'hkcs:';
 const DATA_KEY    = 'master';
 const SYNC_CFG_KEY = LS_PREFIX + 'sync';
@@ -63,11 +63,11 @@ const ROLES = {
 const PERMS = {
   admin:      ['*'],
   supervisor: ['dashboard','assign','keyin','scan','roster','print','report','suptask',
-               'holiday','staff.view','area.view','taskdef.view','shift.view'],
+               'holiday','area.view','taskdef.view','shift.view'],
   manager:    ['dashboard','print','report','suptask.view',
-               'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
+               'area.view','taskdef.view','holiday.view','shift.view'],
   recorder:   ['dashboard','keyin','scan','print','report',
-               'staff.view','area.view','taskdef.view','holiday.view','shift.view'],
+               'area.view','taskdef.view','holiday.view','shift.view'],
   staff:      ['dashboard','print.self','holiday.view']
 };
 
@@ -82,7 +82,6 @@ const ROUTE_PERMS = {
   shifts:    ['shift','shift.view'],
   staffmonth:['report'],
   print:     ['print','print.self'],
-  staff:     ['staff','staff.view'],
   areas:     ['area','area.view'],
   taskdefs:  ['taskdef','taskdef.view'],
   holidays:  ['holiday','holiday.edit','holiday.view'],
@@ -91,7 +90,7 @@ const ROUTE_PERMS = {
   settings:  ['settings']
 };
 
-/** ตรวจสิทธิ์แบบตรงตัว (รองรับ * และการสืบทอดจากรากสิทธิ์ เช่น 'staff' ครอบคลุม 'staff.view') */
+/** ตรวจสิทธิ์แบบตรงตัว (รองรับ * และการสืบทอดจากรากสิทธิ์ เช่น 'area' ครอบคลุม 'area.view') */
 function can(perm){
   const u = state.session; if(!u) return false;
   const list = PERMS[u.role] || [];
