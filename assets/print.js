@@ -445,9 +445,38 @@ async function drawDailySheets(host){
       + '“CHECK SHEET ฟอร์มเปล่า” ที่รองรับรายการได้ไม่จำกัด</div></div>'
     : '';
 
-  host.innerHTML = out.length ? warn + out.join('')
-    : '<div class="card"><div class="empty">ไม่มีงานในช่วงวันที่ที่เลือก<br>'
-      + '<span class="hint">ตรวจว่าได้สร้างตารางงานของเดือนนั้นแล้ว</span></div></div>';
+  if(out.length){ host.innerHTML = warn + out.join(''); return; }
+
+  /* ---- ไม่มีเช็คลิสต์ของช่วงวันนี้ ---- */
+  // ตารางกะบอกว่าใครดูพื้นที่ไหน แต่ “เช็คลิสต์” ต้องกดสร้างอีกที
+  // เดิมขึ้นแค่ว่าไม่มีงาน ทำให้ตัน — ตอนนี้บอกสาเหตุและกดสร้างได้จากตรงนี้เลย
+  const cyc = ensureCycle();
+  await loadCycleRosters(cyc.y, cyc.m);
+  const inRoster = areas.filter(a=> rosterCoversArea(cyc.y, cyc.m, a.id));
+  const names = areas.map(a=> a.name).join(', ');
+  host.innerHTML = '<div class="card"><div class="empty">'
+    + 'ยังไม่มีเช็คลิสต์ของ <b>'+esc(names)+'</b> ในช่วงวันที่เลือก<br>'
+    + '<span class="hint">ตารางกะบอกว่าใครดูแลพื้นที่ไหน ส่วน “เช็คลิสต์” คือรายการงานรายวัน '
+    + 'ที่เอาไปพิมพ์และติ๊ก ต้องกดสร้างอีกครั้งหนึ่ง</span>'
+    + (inRoster.length
+      ? '<div class="row" style="margin-top:.8rem;justify-content:center">'
+        + '<button class="btn primary" id="prMakeList">▶ สร้างเช็คลิสต์จากตารางกะ (รอบ '
+        + esc(cycleLabelShort(cyc.y, cyc.m))+')</button></div>'
+        + '<div class="hint" style="margin-top:.4rem">สร้างให้ทุกพื้นที่ที่ลงตารางกะไว้ในรอบนี้ '
+        + 'ไม่แตะช่องที่บันทึกผลไปแล้ว</div>'
+      : '<div class="hint" style="margin-top:.6rem">พื้นที่นี้ยังไม่ได้ลงตารางกะในรอบนี้ '
+        + 'ไปที่หน้า “ตารางกะ” ลงว่าใครดูแลพื้นที่นี้วันไหนก่อน</div>')
+    + '</div></div>';
+
+  if($('#prMakeList')) $('#prMakeList').onclick = async ()=>{
+    const btn = $('#prMakeList');
+    btn.disabled = true; btn.textContent = 'กำลังสร้าง…';
+    const r = await applyRosterToPlans(cyc.y, cyc.m);
+    toast('สร้างเช็คลิสต์แล้ว '+r.created+' ช่อง'
+      + (r.reassigned ? ' · แก้ชื่อให้ตรงตารางกะ '+r.reassigned : '')
+      + (r.kept ? ' · คงเดิม '+r.kept+' ช่องที่บันทึกผลแล้ว' : ''), 'ok');
+    drawSheets();
+  };
 }
 
 /** ตั้งชื่อไฟล์อัตโนมัติ */
