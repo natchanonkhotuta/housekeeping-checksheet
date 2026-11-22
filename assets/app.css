@@ -373,6 +373,15 @@ table.rs th.d .dw{display:block;font-size:.65rem;font-weight:400;color:var(--mut
 table.rs td.c{width:30px;min-width:30px;height:30px;cursor:pointer;font-weight:700;
   font-size:.78rem;user-select:none}
 table.rs td.c:hover{outline:2px solid var(--brand);outline-offset:-2px}
+/* ---------- ตารางเช็คความครบของตารางกะ ---------- */
+table.rs.cov td.c{cursor:default;font-size:.85rem}
+table.rs.cov td.c.ok{background:var(--ok-soft);color:var(--ok)}
+table.rs.cov td.c.many{background:var(--ok-soft);color:var(--ok);outline:1px solid var(--ok)}
+table.rs.cov td.c.gap{background:var(--danger-soft);cursor:pointer}
+table.rs.cov td.c.gap:hover{outline:2px solid var(--danger);outline-offset:-2px}
+table.rs.cov td.nm{cursor:default;white-space:nowrap}
+table.rs th.flash{animation:rsflash 1.2s ease-out}
+@keyframes rsflash{0%,60%{background:var(--warn-soft);outline:2px solid var(--warn)}100%{background:inherit;outline:none}}
 table.rs .sun{background:var(--sunday)}
 table.rs .hol{background:var(--holiday)}
 table.rs td.off{background:var(--leave);color:#6b4ea8}

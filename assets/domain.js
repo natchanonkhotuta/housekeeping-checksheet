@@ -1403,3 +1403,41 @@ function rosterMismatches(cp){
   });
   return out;
 }
+
+/**
+ * จำนวนคนที่ถูกลงให้ดูแลแต่ละพื้นที่ในแต่ละวันของรอบ
+ * ใช้เช็คว่าลงตารางครบทุกชั้นหรือยัง
+ * @returns { days, rows:[{ area, counts:[], miss, total }], gapDays:[] }
+ */
+function rosterCoverage(y, m){
+  const days  = cycleDays(y, m);
+  const areas = D.areas(true);
+  const staffs = D.staffAll(true);
+
+  // นับล่วงหน้าทีเดียว ไม่ต้องวนซ้ำทุกพื้นที่
+  const tally = {};                       // iso -> areaId -> จำนวนคน
+  days.forEach(dd=>{ tally[dd.iso] = {}; });
+  days.forEach(dd=>{
+    staffs.forEach(s=>{
+      const rec = rosterAt(dd, s.id);
+      if(!rec || rec.off || rec.sp) return;
+      rosterAreas(rec).forEach(id=>{
+        tally[dd.iso][id] = (tally[dd.iso][id] || 0) + 1;
+      });
+    });
+  });
+
+  const rows = areas.map(a=>{
+    const counts = days.map(dd=> tally[dd.iso][a.id] || 0);
+    return {
+      area: a,
+      counts,
+      miss:  counts.filter(n=> n === 0).length,
+      total: counts.reduce((x, n)=> x + n, 0)
+    };
+  });
+
+  // วันที่ยังมีพื้นที่ว่างอยู่
+  const gapDays = days.filter((dd, i)=> rows.some(r=> r.counts[i] === 0));
+  return { days, rows, gapDays };
+}

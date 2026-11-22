@@ -109,6 +109,8 @@ SCREENS.roster = async function(v){
         + '</tbody></table></div>'
       : '<div class="card"><div class="empty">ยังไม่มีข้อมูลแม่บ้าน</div></div>')
 
+    + (staffs.length ? coverageHtml(y, m) : '')
+
     + '<div class="card" style="margin-top:.6rem;padding:.6rem .9rem"><div class="hint">'
     +   '<b>กะ</b> — '+shifts.map(s=>{
           const c = shiftColor(s.id);
@@ -131,6 +133,16 @@ SCREENS.roster = async function(v){
   $('#rsNow').onclick  = ()=>{ const c = currentCycle(); goCycle(c.y, c.m); };
   if($('#rsShifts')) $('#rsShifts').onclick = ()=> go('shifts');
   $('#rsPrint').onclick = ()=> printRoster(y, m);
+
+  // คลิกช่องที่ยังไม่มีคน = เลื่อนตารางกะไปที่คอลัมน์วันนั้นให้
+  $$('.cov td.gap', v).forEach(td=> td.onclick = ()=>{
+    const th = $$('.rs th[data-col]', v).find(x=> x.dataset.col === td.dataset.gapiso);
+    if(th){
+      th.scrollIntoView({ block:'nearest', inline:'center' });
+      th.classList.add('flash');
+      setTimeout(()=> th.classList.remove('flash'), 1200);
+    }
+  });
 
   // ครั้งที่แก้ไข — เก็บไว้กับตารางกะของรอบนี้ ไม่ใช่ของทั้งระบบ
   if($('#rsRev') && editable) $('#rsRev').onchange = async e=>{
@@ -317,11 +329,13 @@ const ROSTER_PRINT_CSS = ''
   + '#printHost .rt th,#printHost .rt td{border:.75pt solid #000;padding:0;'
   +   'font-size:9pt;text-align:center;overflow:hidden;color:#000}'
   + '#printHost .rt th{background:#dfe3e8;font-weight:700;padding:1px 0}'
-  + '#printHost .rt td.nm,#printHost .rt th.nm{text-align:left;font-size:10pt;padding:2px 6px;'
-  +   'white-space:nowrap;text-overflow:ellipsis}'
+  + '#printHost .rt td.nm,#printHost .rt th.nm{text-align:left;font-size:9pt;padding:2px 5px;'
+  +   'white-space:normal;line-height:1.15;word-break:break-word}'
   + '#printHost .rt td.nm .ec{display:inline-block;min-width:38pt;font-size:8.5pt;font-weight:400;'
   +   'color:#000;margin-right:4pt}'
-  + '#printHost .rt td.c{font-weight:700;font-size:11pt;line-height:1.05;letter-spacing:-.2pt}'
+  + '#printHost .rt td.c{font-weight:700;font-size:10pt;line-height:1;letter-spacing:-.2pt}'
+  + '#printHost .rt td.c .sh{display:block;font-size:7.5pt;line-height:1.05;opacity:.95}'
+  + '#printHost .rt td.c .ar{display:block;font-size:10pt;line-height:1.05}'
   + '#printHost .rt td.c .hi{background:#fff;border-radius:2pt;padding:0 1.5pt;margin:0 .5pt}'
   + '#printHost .rt td.sm{font-weight:700;font-size:10pt;background:#f2f4f6}'
   + '#printHost .rt .sun th{background:#c7ccd1}'
@@ -376,15 +390,17 @@ function printRoster(y, m){
       } else if(!rec.off && (rec.sh || ars.length)){
         const f = printFill(shiftColor(rec.sh));
         style = 'background:'+f.bg+';color:'+f.fg;
-        // เลขตึก — ตึกที่ตั้งสีเน้นไว้ใส่กรอบขาวให้เด่นบนพื้นสีเข้ม
-        inner = ars.length
-          ? ars.map(id=>{
-              const hl = areaHighlight(id);
-              return hl
-                ? '<span class="hi" style="color:'+printFill(hl).bg+'">'+esc(areaShort(id))+'</span>'
-                : esc(areaShort(id));
-            }).join(',')
-          : esc((shiftById(rec.sh)||{}).code || '?');
+        // บรรทัดบน = รหัสกะ · บรรทัดล่าง = เลขตึก
+        // (เดิมเห็นแต่เลขตึก พิมพ์ออกมาแล้วแยกไม่ออกว่ากะ A หรือ B)
+        const shc = esc((shiftById(rec.sh)||{}).code || '?');
+        const nums = ars.map(id=>{
+          const hl = areaHighlight(id);
+          return hl
+            ? '<span class="hi" style="color:'+printFill(hl).bg+'">'+esc(areaShort(id))+'</span>'
+            : esc(areaShort(id));
+        }).join(',');
+        inner = '<span class="sh">'+shc+'</span>'
+              + (nums ? '<span class="ar">'+nums+'</span>' : '');
         nWork++;
       } else {
         const om = offMarkOf(s.id, dd.iso, !!rec.off);
@@ -409,7 +425,7 @@ function printRoster(y, m){
     + esc(label)+'</span>';
 
   const sumCols = anyDuty ? 3 : 2;
-  const nameW = 17, sumW = 3.6;
+  const nameW = 21, sumW = 3.4;
   const colW  = ((100 - nameW - sumW*sumCols) / days.length).toFixed(3);
 
   const html =
@@ -658,4 +674,52 @@ function dutyDialog(dt){
     ],
     onOpen: ()=> bindColorField('fdC')
   });
+}
+
+/* =====================================================================
+   ตารางเช็คความครบ — แต่ละวันมีคนประจำชั้นละกี่คน
+   ใช้ดูว่าลงตารางกะครบทุกชั้นหรือยัง ช่องแดงคือยังไม่มีใคร
+   ===================================================================== */
+function coverageHtml(y, m){
+  const cov = rosterCoverage(y, m);
+  const t = todayParts();
+  const todayIso = ymd(t.y, t.m, t.d);
+  const gaps = cov.gapDays.length;
+
+  return '<div class="card" style="margin-top:.6rem">'
+    + '<div class="row" style="align-items:center">'
+    +   '<h3 style="margin:0;flex:1">🔍 เช็คความครบ — แต่ละวันมีคนประจำชั้นละกี่คน</h3>'
+    +   (gaps
+        ? '<span class="badge b-failed">ยังไม่ครบ '+gaps+' วัน</span>'
+        : '<span class="badge b-done">ครบทุกวัน</span>')
+    + '</div>'
+    + '<p class="hint" style="margin:.3rem 0 .5rem">ตัวเลขคือจำนวนคนที่ลงให้ดูแลพื้นที่นั้นในวันนั้น '
+    + '<b style="color:var(--danger)">ช่องแดง = ยังไม่มีใคร</b> · คลิกช่องแดงเพื่อไปลงตารางวันนั้น</p>'
+    + '<div class="tablewrap rswrap"><table class="rs cov"><thead>'
+    +   '<tr><th class="nm">พื้นที่</th>'
+    +   cov.days.map(dd=>{
+          const hd = holidayOn(dd.iso), dow = dowOf(dd.y, dd.m, dd.d);
+          const cls = hd ? 'hol' : dow === 0 ? 'sun' : '';
+          return '<th class="'+cls+(dd.iso===todayIso?' today':'')+'">'+dd.d+'</th>';
+        }).join('')
+    +   '<th class="sum">ว่าง</th></tr></thead><tbody>'
+    + cov.rows.map(r=>
+        '<tr><td class="nm"><b>'+esc(areaShort(r.area.id))+'</b> '+esc(r.area.name)+'</td>'
+        + r.counts.map((n,i)=>{
+            const dd = cov.days[i];
+            const hd = holidayOn(dd.iso), dow = dowOf(dd.y, dd.m, dd.d);
+            let cls = n === 0 ? 'gap' : (n > 1 ? 'many' : 'ok');
+            if(n !== 0 && (hd || dow === 0)) cls += hd ? ' hol' : ' sun';
+            return '<td class="c '+cls+'" data-gapiso="'+dd.iso+'" title="'
+              + esc(thDateLong(dd.iso)+' · '+r.area.name+' · '+(n ? n+' คน' : 'ยังไม่มีใคร'))
+              + '">'+(n || '')+'</td>';
+          }).join('')
+        + '<td class="sum"'+(r.miss?' style="color:var(--danger)"':'')+'><b>'+r.miss+'</b></td></tr>').join('')
+    + '</tbody></table></div>'
+    + (gaps
+      ? '<div class="hint" style="margin-top:.5rem">วันที่ยังลงไม่ครบ: '
+        + cov.gapDays.slice(0,12).map(dd=> dd.d+' '+TH_MONTHS_SHORT[dd.m]).join(' · ')
+        + (gaps > 12 ? ' …' : '')+'</div>'
+      : '')
+    + '</div>';
 }
